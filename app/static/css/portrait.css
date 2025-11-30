@@ -1,0 +1,50 @@
+/* 
+ * 세로 모드 (Portrait Mode) CSS
+ * 터치스크린을 세로 모드로 회전시키기 위한 스타일
+ */
+
+/* 전체 화면을 90도 회전 */
+.portrait-container {
+    transform: rotate(90deg);
+    transform-origin: center center;
+    
+    /* 회전 후 크기 조정 */
+    width: 100vh;  /* 뷰포트 높이를 너비로 */
+    height: 100vw; /* 뷰포트 너비를 높이로 */
+    
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin-top: -50vw;
+    margin-left: -50vh;
+    
+    overflow: hidden;
+}
+
+/* 세로 모드에서 body 스타일 */
+body.portrait-mode {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* 터치 영역 최적화 */
+.portrait-container * {
+    touch-action: manipulation;
+}
+
+/* 버튼 크기 조정 (터치하기 쉽게) */
+.portrait-container button {
+    min-height: 44px;
+    min-width: 44px;
+}
+
+/* 스크롤 방지 */
+html.portrait-mode,
+body.portrait-mode {
+    position: fixed;
+    overflow: hidden;
+}
+
