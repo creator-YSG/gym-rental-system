@@ -19,9 +19,10 @@ python3 run.py &
 # 서버가 시작될 때까지 대기
 sleep 5
 
-# Chromium 키오스크 모드로 시작
+# Chromium 키오스크 모드로 시작 (키링 비밀번호 묻지 않음)
 chromium-browser \
     --kiosk \
+    --password-store=basic \
     --window-size=600,1024 \
     --window-position=0,0 \
     --noerrdialogs \
@@ -29,5 +30,6 @@ chromium-browser \
     --disable-session-crashed-bubble \
     --disable-features=TranslateUI \
     --check-for-update-interval=31536000 \
+    --no-first-run \
     http://localhost:5000
 
