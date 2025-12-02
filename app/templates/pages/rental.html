@@ -2,18 +2,79 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>대여하기</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>상품 선택 - 운동복 대여</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <a href="/" class="back-btn">← 홈</a>
-    
-    <div class="container subpage">
-        <h1>🏃 운동복/수건 대여</h1>
-        <p>회원증 바코드를 스캔해주세요</p>
-        <p style="font-size: 80px; margin: 60px 0;">📱</p>
-        <p style="font-size: 28px; opacity: 0.9;">바코드를 리더기에 대주세요</p>
+    <div class="rental-container">
+        <!-- 상단 헤더 -->
+        <div class="rental-header">
+            <div class="member-info">
+                <div class="member-name" id="memberName">회원님</div>
+                <div class="member-count" id="memberCount">잔여 <strong>0</strong>회</div>
+            </div>
+            <button class="logout-btn" id="logoutBtn">로그아웃</button>
+        </div>
+
+        <!-- 카테고리 탭 -->
+        <div class="category-tabs" id="categoryTabs">
+            <!-- 동적으로 생성됨 -->
+        </div>
+
+        <!-- 상품 그리드 -->
+        <div class="products-area">
+            <div class="products-grid" id="productsGrid">
+                <!-- 동적으로 생성됨 -->
+            </div>
+        </div>
+
+        <!-- 장바구니 영역 -->
+        <div class="cart-area">
+            <div class="cart-header">
+                <span class="cart-title">장바구니</span>
+                <span class="cart-total" id="cartTotal">총 <strong>0</strong>회 차감</span>
+            </div>
+            <div class="cart-items" id="cartItems">
+                <div class="cart-empty">상품을 선택해주세요</div>
+            </div>
+            <button class="checkout-btn" id="checkoutBtn" disabled>대여하기</button>
+        </div>
+
+        <!-- 수량 선택 모달 -->
+        <div class="modal-overlay" id="quantityModal">
+            <div class="modal-content">
+                <div class="modal-title" id="modalProductName">상품명</div>
+                <div class="modal-subtitle">수량을 선택해주세요</div>
+                
+                <div class="quantity-selector">
+                    <button class="qty-btn" id="qtyMinus" onclick="changeQuantity(-1)">−</button>
+                    <span class="qty-value" id="qtyValue">1</span>
+                    <button class="qty-btn" id="qtyPlus" onclick="changeQuantity(1)">+</button>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeQuantityModal()">취소</button>
+                    <button class="modal-btn confirm" onclick="confirmQuantity()">확인</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 로딩 오버레이 -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="loading-spinner"></div>
+            <p>대여 처리 중...</p>
+        </div>
+
+        <!-- 에러 메시지 -->
+        <div class="error-message" id="errorMessage"></div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            initRentalPage();
+        });
+    </script>
 </body>
 </html>

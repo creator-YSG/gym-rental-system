@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>대여 완료 - 운동복 대여</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="complete-container">
+        <!-- 완료 아이콘 -->
+        <div class="complete-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+        </div>
+
+        <!-- 완료 메시지 -->
+        <h1 class="complete-title">대여 완료!</h1>
+        <p class="complete-message">물품이 곧 나옵니다. 잠시만 기다려주세요.</p>
+
+        <!-- 대여 내역 -->
+        <div class="complete-summary" id="completeSummary">
+            <!-- 동적으로 생성됨 -->
+        </div>
+
+        <!-- 카운트다운 -->
+        <div class="countdown" id="countdown">
+            <strong>5</strong>초 후 처음 화면으로 이동합니다
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            initCompletePage();
+        });
+    </script>
+</body>
+</html>
+

@@ -2,18 +2,76 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>운동복/수건 대여</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>운동복 대여 시스템</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <div class="container">
-        <h1>🏃 운동복/수건 대여 시스템</h1>
-        <div class="menu">
-            <a href="/rental" class="btn">대여하기</a>
-            <a href="/return" class="btn">반납하기</a>
-            <a href="/status" class="btn">재고현황</a>
+    <div class="login-container">
+        <!-- 헤더 -->
+        <div class="login-header">
+            <h1>운동복 대여</h1>
+            <p class="login-subtitle">전화번호를 입력해주세요</p>
+        </div>
+
+        <!-- 전화번호 입력 디스플레이 -->
+        <div class="phone-display">
+            <div class="phone-input" id="phoneDisplay">
+                <span class="phone-placeholder">010-0000-0000</span>
+            </div>
+        </div>
+
+        <!-- 숫자 키패드 -->
+        <div class="keypad">
+            <div class="keypad-row">
+                <button class="key-btn" data-key="1">1</button>
+                <button class="key-btn" data-key="2">2</button>
+                <button class="key-btn" data-key="3">3</button>
+            </div>
+            <div class="keypad-row">
+                <button class="key-btn" data-key="4">4</button>
+                <button class="key-btn" data-key="5">5</button>
+                <button class="key-btn" data-key="6">6</button>
+            </div>
+            <div class="keypad-row">
+                <button class="key-btn" data-key="7">7</button>
+                <button class="key-btn" data-key="8">8</button>
+                <button class="key-btn" data-key="9">9</button>
+            </div>
+            <div class="keypad-row">
+                <button class="key-btn key-delete" data-key="delete">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z"/>
+                        <line x1="18" y1="9" x2="12" y2="15"/>
+                        <line x1="12" y1="9" x2="18" y2="15"/>
+                    </svg>
+                </button>
+                <button class="key-btn" data-key="0">0</button>
+                <button class="key-btn key-clear" data-key="clear">C</button>
+            </div>
+        </div>
+
+        <!-- 로그인 버튼 -->
+        <button class="login-btn" id="loginBtn" disabled>
+            <span>로그인</span>
+        </button>
+
+        <!-- 에러 메시지 -->
+        <div class="error-message" id="errorMessage"></div>
+
+        <!-- 로딩 오버레이 -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <div class="loading-spinner"></div>
+            <p>회원 정보 확인 중...</p>
         </div>
     </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+        // 로그인 페이지 초기화
+        document.addEventListener('DOMContentLoaded', function() {
+            initLoginPage();
+        });
+    </script>
 </body>
 </html>
-
