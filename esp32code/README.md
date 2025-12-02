@@ -223,6 +223,37 @@ TB6600 + GT2 20T 15mm + ST7789 + LIMIT 2개
 
 ---
 
+## 테스트 기록
+
+### ✅ v2.0.0 MQTT 통신 테스트 완료 (2024-12-02)
+
+**테스트 환경:**
+- ESP32: FBOX-01 (하드웨어 미연결 상태)
+- 라즈베리파이: 192.168.0.27 (Mosquitto 브로커)
+- 네트워크: 192.168.0.x 대역
+
+**테스트 결과:**
+```
+ESP32 → 라즈베리파이:
+  ✅ boot_complete 이벤트 발행
+  ✅ heartbeat 이벤트 발행 (1분 주기)
+  ✅ status 응답
+
+라즈베리파이 → ESP32:
+  ✅ STATUS 명령 수신 및 응답
+  ✅ fbox/FBOX-01/cmd 토픽 구독 확인
+```
+
+**실제 수신 메시지:**
+```json
+fbox/FBOX-01/status {"event":"status","deviceId":"FBOX-01","size":"TOWEL","stock":30,"doorState":"open","floorState":"moving","locked":false,"wifiRssi":-37,"timestamp":302}
+fbox/FBOX-01/status {"event":"heartbeat","deviceId":"FBOX-01","stock":30,"doorState":"open","locked":false,"timestamp":303}
+```
+
+**결론:** MQTT 양방향 통신 정상 동작 확인. 하드웨어(모터, LCD, 스위치) 연결 시 토출 기능도 동작 예상.
+
+---
+
 ## 라이선스
 
 MIT License
@@ -233,4 +264,5 @@ MIT License
 
 - **v1.0.0** (2024-12-01): 초기 버전 (Wi-Fi + 모터 + LCD)
 - **v2.0.0** (2024-12-01): MQTT 통신 추가
+- **v2.0.0** (2024-12-02): 라즈베리파이 MQTT 브로커 연동 테스트 완료 ✅
 
