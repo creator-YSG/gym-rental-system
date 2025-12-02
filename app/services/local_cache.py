@@ -37,7 +37,8 @@ class LocalCache:
         self._members_cache: Dict[str, Dict] = {}  # {member_id: member_data}
         self._locker_cache: Dict[int, str] = {}    # {locker_number: member_id}
         self._products_cache: Dict[str, Dict] = {} # {product_id: product_data}
-        self._device_cache: Dict[str, Dict] = {}   # {device_id: device_data}
+        self._device_cache: Dict[str, Dict] = {}   # {device_uuid: device_data}
+        self._device_registry: Dict[str, Dict] = {} # {device_uuid: registry_data}
         
         self._connect()
         self._load_cache()
@@ -67,16 +68,32 @@ class LocalCache:
             for row in cursor.fetchall():
                 self._products_cache[row['product_id']] = dict(row)
             
-            # 기기 상태 로드
-            cursor.execute('SELECT * FROM device_cache')
-            for row in cursor.fetchall():
-                self._device_cache[row['device_id']] = dict(row)
+            # 기기 레지스트리 로드
+            try:
+                cursor.execute('SELECT * FROM device_registry')
+                for row in cursor.fetchall():
+                    self._device_registry[row['device_uuid']] = dict(row)
+            except sqlite3.OperationalError:
+                # 테이블이 없으면 무시 (마이그레이션 전)
+                pass
+            
+            # 기기 상태 로드 (device_uuid 기반)
+            try:
+                cursor.execute('SELECT * FROM device_cache')
+                for row in cursor.fetchall():
+                    # device_uuid 컬럼이 있으면 사용, 없으면 device_id 사용 (호환성)
+                    key = row['device_uuid'] if 'device_uuid' in row.keys() else row.get('device_id')
+                    if key:
+                        self._device_cache[key] = dict(row)
+            except sqlite3.OperationalError:
+                pass
             
             print(f"[LocalCache] 캐시 로드 완료:")
             print(f"  - 회원: {len(self._members_cache)}명")
             print(f"  - 락카: {len(self._locker_cache)}개")
             print(f"  - 상품: {len(self._products_cache)}개")
-            print(f"  - 기기: {len(self._device_cache)}개")
+            print(f"  - 기기 레지스트리: {len(self._device_registry)}개")
+            print(f"  - 기기 상태: {len(self._device_cache)}개")
     
     # =============================
     # 회원 관련
@@ -324,43 +341,194 @@ class LocalCache:
             return True
     
     # =============================
-    # 기기 상태
+    # 기기 레지스트리 (MAC 기반 고유 ID)
     # =============================
     
-    def get_device(self, device_id: str) -> Optional[Dict]:
-        """기기 상태 조회 (메모리 캐시)"""
-        return self._device_cache.get(device_id)
-    
-    def get_all_devices(self) -> List[Dict]:
-        """모든 기기 상태 조회"""
-        return list(self._device_cache.values())
-    
-    def update_device_status(self, device_id: str, **kwargs) -> bool:
+    def register_device(self, device_uuid: str, mac_address: str, 
+                       size: str = '', category: str = '', 
+                       device_name: str = '', ip_address: str = '', 
+                       firmware_version: str = '', stock: int = 0) -> Dict:
         """
-        기기 상태 업데이트
+        새 기기 등록 또는 기존 기기 정보 업데이트
+        + products 테이블에도 자동 생성/업데이트
         
         Args:
-            device_id: 기기 ID
-            **kwargs: 업데이트할 필드 (stock, door_state, floor_state, locked 등)
+            device_uuid: MAC 기반 고유 ID (예: "FBOX-A4CF12345678")
+            mac_address: 원본 MAC 주소 (예: "A4:CF:12:34:56:78")
+            size: 사이즈 (예: "105")
+            category: 카테고리 (top/pants/towel/sweat_towel/other)
+            device_name: 상품명 (ESP32에서 설정, 한글 가능)
+            ip_address: IP 주소
+            firmware_version: 펌웨어 버전
+            stock: 현재 재고
         
         Returns:
-            성공 여부
+            등록된 기기 정보
         """
         with self.lock:
-            device = self._device_cache.get(device_id)
-            if device is None:
-                # 기기가 없으면 새로 생성
-                device = {
-                    'device_id': device_id,
-                    'size': kwargs.get('size', ''),
-                    'stock': 0,
-                    'door_state': 'closed',
-                    'floor_state': 'reached',
-                    'locked': False,
-                    'last_heartbeat': None,
-                    'updated_at': datetime.now().isoformat()
+            now = datetime.now().isoformat()
+            cursor = self.conn.cursor()
+            
+            # 기존 기기 확인
+            existing = self._device_registry.get(device_uuid)
+            
+            if existing:
+                # 기존 기기 업데이트
+                cursor.execute('''
+                    UPDATE device_registry 
+                    SET size = ?, category = ?, device_name = ?,
+                        ip_address = ?, firmware_version = ?, 
+                        last_seen_at = ?, updated_at = ?
+                    WHERE device_uuid = ?
+                ''', (size, category, device_name, ip_address, firmware_version, 
+                      now, now, device_uuid))
+                
+                existing['size'] = size
+                existing['category'] = category
+                existing['device_name'] = device_name
+                existing['ip_address'] = ip_address
+                existing['firmware_version'] = firmware_version
+                existing['last_seen_at'] = now
+                existing['updated_at'] = now
+                
+                print(f"[LocalCache] 기기 정보 업데이트: {device_uuid} ({device_name})")
+                device_info = existing
+            else:
+                # 새 기기 등록
+                cursor.execute('''
+                    INSERT INTO device_registry 
+                    (device_uuid, mac_address, size, category, device_name,
+                     ip_address, firmware_version, first_seen_at, last_seen_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (device_uuid, mac_address, size, category, device_name,
+                      ip_address, firmware_version, now, now, now))
+                
+                device_info = {
+                    'device_uuid': device_uuid,
+                    'mac_address': mac_address,
+                    'device_name': device_name,
+                    'size': size,
+                    'category': category,
+                    'product_id': None,
+                    'ip_address': ip_address,
+                    'firmware_version': firmware_version,
+                    'first_seen_at': now,
+                    'last_seen_at': now,
+                    'updated_at': now
                 }
-                self._device_cache[device_id] = device
+                self._device_registry[device_uuid] = device_info
+                
+                print(f"[LocalCache] ✅ 새 기기 등록: {device_uuid} ({device_name or 'No Name'})")
+            
+            self.conn.commit()
+            
+            # products 테이블에도 생성/업데이트
+            if category and size:
+                product_id = self._create_or_update_product(
+                    device_uuid=device_uuid,
+                    category=category,
+                    size=size,
+                    name=device_name,
+                    stock=stock
+                )
+                device_info['product_id'] = product_id
+                
+                # device_registry에 product_id 업데이트
+                cursor.execute('''
+                    UPDATE device_registry SET product_id = ? WHERE device_uuid = ?
+                ''', (product_id, device_uuid))
+                self.conn.commit()
+            
+            return device_info
+    
+    def _create_or_update_product(self, device_uuid: str, category: str, 
+                                   size: str, name: str, stock: int = 0) -> str:
+        """
+        products 테이블에 상품 생성 또는 업데이트
+        
+        Args:
+            device_uuid: 기기 UUID (FK)
+            category: 카테고리
+            size: 사이즈
+            name: 상품명
+            stock: 재고
+        
+        Returns:
+            product_id
+        """
+        now = datetime.now().isoformat()
+        cursor = self.conn.cursor()
+        
+        # device_uuid로 기존 상품 확인
+        cursor.execute('SELECT product_id FROM products WHERE device_uuid = ?', (device_uuid,))
+        row = cursor.fetchone()
+        
+        if row:
+            # 기존 상품 업데이트
+            product_id = row[0]
+            cursor.execute('''
+                UPDATE products 
+                SET category = ?, size = ?, name = ?, stock = ?, updated_at = ?
+                WHERE device_uuid = ?
+            ''', (category, size, name, stock, now, device_uuid))
+            print(f"[LocalCache] 상품 업데이트: {product_id} ({name})")
+        else:
+            # 새 상품 생성
+            # product_id 형식: P-{CATEGORY}-{SIZE} (예: P-TOP-105)
+            category_upper = category.upper()
+            product_id = f"P-{category_upper}-{size}"
+            
+            # 중복 체크 (같은 product_id가 있으면 UUID 추가)
+            cursor.execute('SELECT 1 FROM products WHERE product_id = ?', (product_id,))
+            if cursor.fetchone():
+                # 중복 시 UUID 일부 추가
+                product_id = f"P-{category_upper}-{size}-{device_uuid[-4:]}"
+            
+            cursor.execute('''
+                INSERT INTO products 
+                (product_id, gym_id, category, size, name, device_uuid, stock, enabled, display_order, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (product_id, 'GYM001', category, size, name, device_uuid, stock, 1, 0, now))
+            
+            # 캐시에도 추가
+            self._products_cache[product_id] = {
+                'product_id': product_id,
+                'gym_id': 'GYM001',
+                'category': category,
+                'size': size,
+                'name': name,
+                'device_uuid': device_uuid,
+                'stock': stock,
+                'enabled': True,
+                'display_order': 0,
+                'updated_at': now
+            }
+            
+            print(f"[LocalCache] ✅ 새 상품 생성: {product_id} ({name})")
+        
+        self.conn.commit()
+        return product_id
+    
+    def get_device_registry(self, device_uuid: str) -> Optional[Dict]:
+        """기기 레지스트리 정보 조회"""
+        return self._device_registry.get(device_uuid)
+    
+    def get_all_registered_devices(self) -> List[Dict]:
+        """모든 등록된 기기 조회"""
+        return list(self._device_registry.values())
+    
+    def update_device_registry(self, device_uuid: str, **kwargs) -> bool:
+        """
+        기기 레지스트리 정보 업데이트 (이름, 카테고리, 상품 연결 등)
+        
+        Args:
+            device_uuid: 기기 UUID
+            **kwargs: device_name, category, product_id 등
+        """
+        with self.lock:
+            device = self._device_registry.get(device_uuid)
+            if not device:
+                return False
             
             # 메모리 캐시 업데이트
             for key, value in kwargs.items():
@@ -370,38 +538,106 @@ class LocalCache:
             
             # SQLite 업데이트
             cursor = self.conn.cursor()
+            set_clause = ', '.join([f"{k} = ?" for k in kwargs.keys()])
+            values = list(kwargs.values()) + [device['updated_at'], device_uuid]
+            
+            cursor.execute(f'''
+                UPDATE device_registry 
+                SET {set_clause}, updated_at = ?
+                WHERE device_uuid = ?
+            ''', values)
+            
+            self.conn.commit()
+            return True
+    
+    # =============================
+    # 기기 상태 (실시간)
+    # =============================
+    
+    def get_device(self, device_uuid: str) -> Optional[Dict]:
+        """기기 상태 조회 (메모리 캐시)"""
+        return self._device_cache.get(device_uuid)
+    
+    def get_all_devices(self) -> List[Dict]:
+        """모든 기기 상태 조회"""
+        return list(self._device_cache.values())
+    
+    def update_device_status(self, device_uuid: str, **kwargs) -> bool:
+        """
+        기기 상태 업데이트
+        
+        Args:
+            device_uuid: 기기 UUID (MAC 기반)
+            **kwargs: 업데이트할 필드 (stock, door_state, floor_state, locked 등)
+        
+        Returns:
+            성공 여부
+        """
+        with self.lock:
+            device = self._device_cache.get(device_uuid)
+            if device is None:
+                # 기기가 없으면 새로 생성
+                device = {
+                    'device_uuid': device_uuid,
+                    'size': kwargs.get('size', ''),
+                    'stock': 0,
+                    'door_state': 'closed',
+                    'floor_state': 'reached',
+                    'locked': False,
+                    'wifi_rssi': None,
+                    'last_heartbeat': None,
+                    'updated_at': datetime.now().isoformat()
+                }
+                self._device_cache[device_uuid] = device
+            
+            # 메모리 캐시 업데이트
+            for key, value in kwargs.items():
+                device[key] = value
+            device['updated_at'] = datetime.now().isoformat()
+            
+            # SQLite 업데이트
+            cursor = self.conn.cursor()
             
             # UPSERT 구문 (SQLite 3.24+)
-            fields = ['device_id'] + list(kwargs.keys()) + ['updated_at']
+            fields = ['device_uuid'] + list(kwargs.keys()) + ['updated_at']
             placeholders = ', '.join(['?' for _ in fields])
-            update_clause = ', '.join([f"{f} = excluded.{f}" for f in fields if f != 'device_id'])
+            update_clause = ', '.join([f"{f} = excluded.{f}" for f in fields if f != 'device_uuid'])
             
-            values = [device_id] + [kwargs.get(f) for f in kwargs.keys()] + [device['updated_at']]
+            values = [device_uuid] + [kwargs.get(f) for f in kwargs.keys()] + [device['updated_at']]
             
             cursor.execute(f'''
                 INSERT INTO device_cache ({', '.join(fields)})
                 VALUES ({placeholders})
-                ON CONFLICT(device_id) DO UPDATE SET {update_clause}
+                ON CONFLICT(device_uuid) DO UPDATE SET {update_clause}
             ''', values)
             
             self.conn.commit()
             
             return True
     
-    def update_heartbeat(self, device_id: str) -> bool:
+    def update_heartbeat(self, device_uuid: str, wifi_rssi: int = None) -> bool:
         """
         기기 하트비트 업데이트
         
         Args:
-            device_id: 기기 ID
+            device_uuid: 기기 UUID
+            wifi_rssi: Wi-Fi 신호 강도
         
         Returns:
             성공 여부
         """
-        return self.update_device_status(
-            device_id, 
-            last_heartbeat=datetime.now().isoformat()
-        )
+        kwargs = {'last_heartbeat': datetime.now().isoformat()}
+        if wifi_rssi is not None:
+            kwargs['wifi_rssi'] = wifi_rssi
+        
+        return self.update_device_status(device_uuid, **kwargs)
+    
+    def get_product_by_device_uuid(self, device_uuid: str) -> Optional[Dict]:
+        """기기 UUID로 연결된 상품 조회"""
+        registry = self._device_registry.get(device_uuid)
+        if registry and registry.get('product_id'):
+            return self._products_cache.get(registry['product_id'])
+        return None
     
     # =============================
     # 대여 로그

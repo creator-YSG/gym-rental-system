@@ -130,7 +130,7 @@ class MQTTService:
         ESP32로부터 수신한 이벤트 처리
         
         Args:
-            device_id: 기기 ID
+            device_id: 기기 ID (MQTT 토픽에서 추출, device_uuid)
             payload: 이벤트 페이로드
         """
         event_type = payload.get('event')
@@ -139,19 +139,22 @@ class MQTTService:
             print(f"[MQTT] 이벤트 타입 없음: {payload}")
             return
         
-        print(f"[MQTT] ← {device_id}: {event_type}")
+        # device_uuid 추출 (payload에서 우선, 없으면 토픽에서 추출한 device_id 사용)
+        device_uuid = payload.get('deviceUUID', device_id)
+        
+        print(f"[MQTT] ← {device_uuid}: {event_type}")
         
         # DB 로깅 (local_cache가 설정되어 있으면)
         if hasattr(self, 'local_cache') and self.local_cache:
             try:
-                self.local_cache.log_mqtt_event(device_id, event_type, payload)
+                self.local_cache.log_mqtt_event(device_uuid, event_type, payload)
             except Exception as e:
                 print(f"[MQTT] DB 로깅 오류: {e}")
         
         # 등록된 핸들러 실행
         if event_type in self.event_handlers:
             try:
-                self.event_handlers[event_type](device_id, payload)
+                self.event_handlers[event_type](device_uuid, payload)
             except Exception as e:
                 print(f"[MQTT] 핸들러 실행 오류 ({event_type}): {e}")
         else:
@@ -296,75 +299,82 @@ class MQTTService:
 # 기본 이벤트 핸들러 예시
 # =============================
 
-def handle_boot_complete(device_id: str, payload: Dict):
+def handle_boot_complete(device_uuid: str, payload: Dict):
     """부팅 완료 이벤트 핸들러"""
-    print(f"[Event] {device_id} 부팅 완료:")
-    print(f"  - Size: {payload.get('size')}")
-    print(f"  - Stock: {payload.get('stock')}")
-    print(f"  - IP: {payload.get('ipAddress')}")
-    print(f"  - Firmware: {payload.get('firmwareVersion')}")
+    mac_address = payload.get('macAddress', '')
+    size = payload.get('size', '')
+    stock = payload.get('stock', 0)
+    ip_address = payload.get('ipAddress', '')
+    firmware = payload.get('firmwareVersion', '')
+    
+    print(f"[Event] {device_uuid} 부팅 완료:")
+    print(f"  - MAC: {mac_address}")
+    print(f"  - Size: {size}")
+    print(f"  - Stock: {stock}")
+    print(f"  - IP: {ip_address}")
+    print(f"  - Firmware: {firmware}")
 
 
-def handle_heartbeat(device_id: str, payload: Dict):
+def handle_heartbeat(device_uuid: str, payload: Dict):
     """하트비트 이벤트 핸들러"""
     # 조용히 처리 (로그 최소화)
     pass
 
 
-def handle_dispense_complete(device_id: str, payload: Dict):
+def handle_dispense_complete(device_uuid: str, payload: Dict):
     """토출 완료 이벤트 핸들러"""
     stock = payload.get('stock')
-    print(f"[Event] {device_id} 토출 완료: 재고 {stock}개")
+    print(f"[Event] {device_uuid} 토출 완료: 재고 {stock}개")
 
 
-def handle_dispense_failed(device_id: str, payload: Dict):
+def handle_dispense_failed(device_uuid: str, payload: Dict):
     """토출 실패 이벤트 핸들러"""
     reason = payload.get('reason')
-    print(f"[Event] {device_id} 토출 실패: {reason}")
+    print(f"[Event] {device_uuid} 토출 실패: {reason}")
 
 
-def handle_door_opened(device_id: str, payload: Dict):
+def handle_door_opened(device_uuid: str, payload: Dict):
     """문 열림 이벤트 핸들러"""
-    print(f"[Event] {device_id} 문 열림 (재고 보충 시작?)")
+    print(f"[Event] {device_uuid} 문 열림 (재고 보충 시작?)")
 
 
-def handle_door_closed(device_id: str, payload: Dict):
+def handle_door_closed(device_uuid: str, payload: Dict):
     """문 닫힘 이벤트 핸들러"""
     stock = payload.get('stock')
     sensor_available = payload.get('sensorAvailable', False)
-    print(f"[Event] {device_id} 문 닫힘: 재고 {stock}개 (센서: {'O' if sensor_available else 'X'})")
+    print(f"[Event] {device_uuid} 문 닫힘: 재고 {stock}개 (센서: {'O' if sensor_available else 'X'})")
 
 
-def handle_stock_updated(device_id: str, payload: Dict):
+def handle_stock_updated(device_uuid: str, payload: Dict):
     """재고 업데이트 이벤트 핸들러"""
     stock = payload.get('stock')
     source = payload.get('source', 'unknown')
     needs_verification = payload.get('needsVerification', False)
     
-    print(f"[Event] {device_id} 재고 업데이트: {stock}개 (출처: {source})")
+    print(f"[Event] {device_uuid} 재고 업데이트: {stock}개 (출처: {source})")
     if needs_verification:
         print(f"  ⚠️  관리자 확인 필요")
 
 
-def handle_stock_low(device_id: str, payload: Dict):
+def handle_stock_low(device_uuid: str, payload: Dict):
     """재고 부족 이벤트 핸들러"""
     stock = payload.get('stock')
-    print(f"[Event] {device_id} ⚠️  재고 부족: {stock}개")
+    print(f"[Event] {device_uuid} ⚠️  재고 부족: {stock}개")
 
 
-def handle_stock_empty(device_id: str, payload: Dict):
+def handle_stock_empty(device_uuid: str, payload: Dict):
     """재고 없음 이벤트 핸들러"""
-    print(f"[Event] {device_id} ❌ 재고 없음")
+    print(f"[Event] {device_uuid} ❌ 재고 없음")
 
 
-def handle_error(device_id: str, payload: Dict):
+def handle_error(device_uuid: str, payload: Dict):
     """에러 이벤트 핸들러"""
     error_code = payload.get('errorCode')
     error_message = payload.get('errorMessage')
-    print(f"[Event] {device_id} ❌ 에러: [{error_code}] {error_message}")
+    print(f"[Event] {device_uuid} ❌ 에러: [{error_code}] {error_message}")
 
 
-def handle_status(device_id: str, payload: Dict):
+def handle_status(device_uuid: str, payload: Dict):
     """상태 응답 이벤트 핸들러"""
     size = payload.get('size')
     stock = payload.get('stock')
@@ -373,27 +383,27 @@ def handle_status(device_id: str, payload: Dict):
     locked = payload.get('locked', False)
     rssi = payload.get('wifiRssi')
     
-    print(f"[Event] {device_id} 상태:")
+    print(f"[Event] {device_uuid} 상태:")
     print(f"  - Size: {size}, Stock: {stock}")
     print(f"  - Door: {door_state}, Floor: {floor_state}")
     print(f"  - Locked: {locked}, RSSI: {rssi}dBm")
 
 
-def handle_home_failed(device_id: str, payload: Dict):
+def handle_home_failed(device_uuid: str, payload: Dict):
     """홈 복귀 실패 이벤트 핸들러"""
     reason = payload.get('reason')
-    print(f"[Event] {device_id} ⚠️ 홈 복귀 실패: {reason}")
+    print(f"[Event] {device_uuid} ⚠️ 홈 복귀 실패: {reason}")
 
 
-def handle_wifi_reconnected(device_id: str, payload: Dict):
+def handle_wifi_reconnected(device_uuid: str, payload: Dict):
     """Wi-Fi 재연결 이벤트 핸들러"""
     ip = payload.get('ipAddress')
-    print(f"[Event] {device_id} 📶 Wi-Fi 재연결: {ip}")
+    print(f"[Event] {device_uuid} 📶 Wi-Fi 재연결: {ip}")
 
 
-def handle_mqtt_reconnected(device_id: str, payload: Dict):
+def handle_mqtt_reconnected(device_uuid: str, payload: Dict):
     """MQTT 재연결 이벤트 핸들러"""
-    print(f"[Event] {device_id} 🔄 MQTT 재연결")
+    print(f"[Event] {device_uuid} 🔄 MQTT 재연결")
 
 
 # =============================
@@ -430,20 +440,97 @@ def register_default_handlers(mqtt_service: MQTTService, local_cache=None):
     mqtt_service.register_event_handler('wifi_reconnected', handle_wifi_reconnected)
     mqtt_service.register_event_handler('mqtt_reconnected', handle_mqtt_reconnected)
     
-    # LocalCache와 연동하는 핸들러 (선택)
+    # LocalCache와 연동하는 핸들러 (기기 자동 등록 포함)
     if local_cache:
-        def handle_heartbeat_with_cache(device_id: str, payload: Dict):
-            local_cache.update_heartbeat(device_id)
+        def handle_boot_complete_with_cache(device_uuid: str, payload: Dict):
+            """부팅 완료 시 기기 자동 등록 + 상품 자동 생성"""
+            mac_address = payload.get('macAddress', '')
+            size = payload.get('size', '')
+            category = payload.get('category', 'other')
+            device_name = payload.get('deviceName', '')
+            stock = payload.get('stock', 0)
+            ip_address = payload.get('ipAddress', '')
+            firmware = payload.get('firmwareVersion', '')
+            
+            # 기기 레지스트리에 등록/업데이트 + products 자동 생성
+            device_info = local_cache.register_device(
+                device_uuid=device_uuid,
+                mac_address=mac_address,
+                size=size,
+                category=category,
+                device_name=device_name,
+                ip_address=ip_address,
+                firmware_version=firmware,
+                stock=stock  # 재고도 전달
+            )
+            
+            # 기기 상태 캐시 업데이트
+            local_cache.update_device_status(
+                device_uuid, 
+                size=size, 
+                stock=stock,
+                last_heartbeat=None  # boot_complete는 heartbeat와 별개
+            )
+            
+            product_id = device_info.get('product_id', '')
+            print(f"[Event] ✅ {device_uuid} 기기+상품 등록 완료")
+            print(f"        상품ID: {product_id}, 상품명: {device_name or category}")
         
-        def handle_dispense_with_cache(device_id: str, payload: Dict):
+        def handle_heartbeat_with_cache(device_uuid: str, payload: Dict):
+            """하트비트 시 상태 업데이트"""
             stock = payload.get('stock')
-            product = local_cache.get_product_by_device(device_id)
+            wifi_rssi = payload.get('wifiRssi')
+            locked = payload.get('locked', False)
+            door_state = payload.get('doorState')
+            
+            local_cache.update_heartbeat(device_uuid, wifi_rssi=wifi_rssi)
+            local_cache.update_device_status(
+                device_uuid, 
+                stock=stock, 
+                locked=locked,
+                door_state=door_state
+            )
+        
+        def handle_dispense_with_cache(device_uuid: str, payload: Dict):
+            """토출 완료 시 재고 업데이트"""
+            stock = payload.get('stock')
+            
+            # 연결된 상품 재고 업데이트
+            product = local_cache.get_product_by_device_uuid(device_uuid)
             if product:
                 local_cache.update_product_stock(product['product_id'], stock)
-            local_cache.update_device_status(device_id, stock=stock)
+            
+            # 기기 상태 업데이트
+            local_cache.update_device_status(device_uuid, stock=stock)
         
+        def handle_stock_updated_with_cache(device_uuid: str, payload: Dict):
+            """재고 변동 시 상태 업데이트"""
+            stock = payload.get('stock')
+            
+            product = local_cache.get_product_by_device_uuid(device_uuid)
+            if product:
+                local_cache.update_product_stock(product['product_id'], stock)
+            
+            local_cache.update_device_status(device_uuid, stock=stock)
+        
+        def handle_status_with_cache(device_uuid: str, payload: Dict):
+            """상태 응답 시 전체 상태 업데이트"""
+            local_cache.update_device_status(
+                device_uuid,
+                size=payload.get('size'),
+                stock=payload.get('stock'),
+                door_state=payload.get('doorState'),
+                floor_state=payload.get('floorState'),
+                locked=payload.get('locked', False),
+                wifi_rssi=payload.get('wifiRssi')
+            )
+        
+        # 캐시 연동 핸들러로 덮어쓰기
+        mqtt_service.register_event_handler('boot_complete', handle_boot_complete_with_cache)
         mqtt_service.register_event_handler('heartbeat', handle_heartbeat_with_cache)
         mqtt_service.register_event_handler('dispense_complete', handle_dispense_with_cache)
+        mqtt_service.register_event_handler('stock_updated', handle_stock_updated_with_cache)
+        mqtt_service.register_event_handler('status', handle_status_with_cache)
     
     print("[MQTT] 기본 핸들러 등록 완료")
 

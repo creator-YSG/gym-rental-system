@@ -123,7 +123,8 @@ class SheetsSync:
     
     def download_products(self, local_cache) -> int:
         """
-        상품 가격표 다운로드
+        상품 정보 다운로드 (Google Sheets → SQLite)
+        주의: ESP32에서 자동 생성된 상품과 충돌하지 않도록 device_uuid가 있는 행만 업데이트
         
         Args:
             local_cache: LocalCache 인스턴스
@@ -141,9 +142,14 @@ class SheetsSync:
             cursor = conn.cursor()
             
             for record in records:
+                device_uuid = record.get('device_uuid', '')
+                if not device_uuid:
+                    # device_uuid가 없으면 ESP32 연결 안된 상품 - 스킵
+                    continue
+                    
                 cursor.execute('''
                     INSERT OR REPLACE INTO products 
-                    (product_id, gym_id, category, size, name, device_id, 
+                    (product_id, gym_id, category, size, name, device_uuid, 
                      stock, enabled, display_order, updated_at)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
@@ -152,7 +158,7 @@ class SheetsSync:
                     record.get('category'),
                     record.get('size', ''),
                     record.get('name'),
-                    record.get('device_id'),
+                    device_uuid,
                     record.get('stock', 0),
                     1 if record.get('enabled') == 'TRUE' else 0,
                     record.get('display_order', 0),
@@ -205,7 +211,7 @@ class SheetsSync:
                     rental.get('locker_number', ''),
                     rental['product_id'],
                     '',  # product_name (조회 필요 시)
-                    rental['device_id'],
+                    rental.get('device_uuid', ''),  # device_uuid로 변경
                     rental['quantity'],       # 대여 수량 = 차감 횟수
                     rental['count_before'],   # 대여 전 잔여 횟수
                     rental['count_after'],    # 대여 후 잔여 횟수
@@ -281,7 +287,7 @@ class SheetsSync:
     
     def update_device_status(self, local_cache) -> int:
         """
-        기기 상태 업데이트
+        기기 상태 업데이트 (device_uuid 기반)
         
         Args:
             local_cache: LocalCache 인스턴스
@@ -290,63 +296,144 @@ class SheetsSync:
             업데이트된 기기 수
         """
         try:
-            conn = local_cache.conn
-            cursor = conn.cursor()
+            # device_registry와 device_cache 조인
+            devices = local_cache.get_all_devices()
+            registry = {d['device_uuid']: d for d in local_cache.get_all_registered_devices()}
             
-            cursor.execute('SELECT * FROM device_cache')
-            devices = [dict(row) for row in cursor.fetchall()]
-            
-            if not devices:
+            if not devices and not registry:
                 return 0
             
             self._rate_limit()
             sheet = self.spreadsheet.worksheet('device_status')
             
-            # 기존 데이터 전체 삭제 후 재작성 (간단한 방식)
-            # 실제로는 UPDATE 방식이 더 효율적
+            # 기존 데이터 전체 삭제 후 재작성
             sheet.clear()
             
-            # 헤더 추가
-            headers = ['device_id', 'product_id', 'size', 'stock', 'status', 
-                      'last_heartbeat', 'last_dispense', 'total_dispense_count',
-                      'error_message', 'updated_at']
+            # 새 헤더 (category 추가)
+            headers = ['device_uuid', 'mac_address', 'device_name', 'category',
+                      'size', 'stock', 'status', 'wifi_rssi',
+                      'last_heartbeat', 'ip_address', 'firmware_version',
+                      'first_seen_at', 'updated_at']
             rows = [headers]
             
-            for device in devices:
+            # device_cache + device_registry 병합
+            all_uuids = set(d.get('device_uuid') for d in devices) | set(registry.keys())
+            
+            for device_uuid in all_uuids:
+                cache = next((d for d in devices if d.get('device_uuid') == device_uuid), {})
+                reg = registry.get(device_uuid, {})
+                
                 # 상태 판단
-                if device.get('last_heartbeat'):
-                    # 마지막 하트비트가 2분 이내면 online
-                    heartbeat_time = datetime.fromisoformat(device['last_heartbeat'])
-                    now = datetime.now()
-                    diff = (now - heartbeat_time).total_seconds()
-                    status = 'online' if diff < 120 else 'offline'
+                last_heartbeat = cache.get('last_heartbeat')
+                if last_heartbeat:
+                    try:
+                        heartbeat_time = datetime.fromisoformat(last_heartbeat)
+                        diff = (datetime.now() - heartbeat_time).total_seconds()
+                        status = 'online' if diff < 120 else 'offline'
+                    except:
+                        status = 'offline'
                 else:
                     status = 'offline'
                 
-                # product_id 조회
-                product = local_cache.get_product_by_device(device['device_id'])
-                product_id = product['product_id'] if product else ''
-                
                 rows.append([
-                    device['device_id'],
-                    product_id,
-                    device.get('size', ''),
-                    device.get('stock', 0),
+                    device_uuid,
+                    reg.get('mac_address', ''),
+                    reg.get('device_name', ''),
+                    reg.get('category', ''),
+                    cache.get('size') or reg.get('size', ''),
+                    cache.get('stock', 0),
                     status,
-                    device.get('last_heartbeat', ''),
-                    '',  # last_dispense (추가 필요)
-                    0,   # total_dispense_count (추가 필요)
-                    '',  # error_message
-                    device.get('updated_at', '')
+                    cache.get('wifi_rssi', ''),
+                    last_heartbeat or '',
+                    reg.get('ip_address', ''),
+                    reg.get('firmware_version', ''),
+                    reg.get('first_seen_at', ''),
+                    cache.get('updated_at') or reg.get('updated_at', '')
                 ])
             
             sheet.update('A1', rows)
             
-            print(f"[Sheets] 기기 상태 업데이트 완료: {len(devices)}개")
-            return len(devices)
+            # 헤더 서식 적용
+            sheet.format('A1:M1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+            
+            print(f"[Sheets] 기기 상태 업데이트 완료: {len(rows) - 1}개")
+            return len(rows) - 1
             
         except Exception as e:
             print(f"[Sheets] 기기 상태 업데이트 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+    
+    def upload_products(self, local_cache) -> int:
+        """
+        상품 정보 업로드 (SQLite → Google Sheets)
+        ESP32에서 자동 생성된 상품을 Google Sheets로 동기화
+        
+        Args:
+            local_cache: LocalCache 인스턴스
+        
+        Returns:
+            업로드된 상품 수
+        """
+        try:
+            # SQLite에서 상품 조회
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT product_id, gym_id, category, size, name, 
+                       device_uuid, stock, enabled, display_order, updated_at
+                FROM products
+                ORDER BY display_order, product_id
+            ''')
+            products = cursor.fetchall()
+            
+            if not products:
+                return 0
+            
+            self._rate_limit()
+            sheet = self.spreadsheet.worksheet('products')
+            
+            # 기존 데이터 전체 삭제 후 재작성
+            sheet.clear()
+            
+            # 헤더
+            headers = ['product_id', 'gym_id', 'category', 'size', 'name', 
+                      'device_uuid', 'stock', 'enabled', 'display_order', 'updated_at']
+            rows = [headers]
+            
+            for p in products:
+                rows.append([
+                    p[0],  # product_id
+                    p[1],  # gym_id
+                    p[2],  # category
+                    p[3],  # size
+                    p[4],  # name
+                    p[5] or '',  # device_uuid
+                    p[6],  # stock
+                    'TRUE' if p[7] else 'FALSE',  # enabled
+                    p[8],  # display_order
+                    p[9] or ''   # updated_at
+                ])
+            
+            sheet.update('A1', rows)
+            
+            # 헤더 서식 적용
+            sheet.format('A1:J1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+            
+            print(f"[Sheets] 상품 정보 업로드 완료: {len(products)}개")
+            return len(products)
+            
+        except Exception as e:
+            print(f"[Sheets] 상품 업로드 오류: {e}")
+            import traceback
+            traceback.print_exc()
             return 0
     
     def update_member_count(self, member_id: str, remaining_count: int) -> bool:

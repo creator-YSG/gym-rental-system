@@ -42,7 +42,7 @@
 // =============================
 // 펌웨어 버전
 // =============================
-#define FIRMWARE_VERSION "v2.0.0"
+#define FIRMWARE_VERSION "v2.1.0"
 
 // =============================
 // 1. 공통 상수 / 핀 / 전역 변수
@@ -90,13 +90,21 @@ SystemState currentState = STATE_SETUP;
 struct AppConfig {
   char wifiSsid[32];
   char wifiPass[64];
-  char size[8];           // "M", "L", "XL", "105" 등
-  char deviceId[32];      // "FBOX-UPPER-105" 같은 기기 ID
+  char size[8];           // "M", "L", "XL", "105" 등 (LCD 표시용)
+  char category[16];      // "top", "pants", "towel", "sweat_towel", "other"
+  char deviceName[64];    // 상품명 (한글 가능, 예: "운동복 상의 105")
   char brokerHost[64];    // MQTT 브로커 주소 (라즈베리파이 IP)
   uint16_t brokerPort;    // 기본 1883
 };
 
 AppConfig g_config;
+
+// =============================
+// 2-1. 시스템 고유 ID (MAC 기반, 변경 불가)
+// =============================
+
+char g_deviceUUID[24];    // "FBOX-A4CF12345678" 형식 (MAC 기반 자동 생성)
+char g_macAddress[18];    // "A4:CF:12:34:56:78" 형식
 
 // =============================
 // 3. 재고 및 상태 변수
@@ -114,9 +122,9 @@ bool g_locked = false;
 bool g_hasError = false;
 char g_errorMessage[64] = "";
 
-// MQTT 토픽 (런타임에 구성)
-char g_topicCmd[64];     // fbox/{deviceId}/cmd
-char g_topicStatus[64];  // fbox/{deviceId}/status
+// MQTT 토픽 (런타임에 구성, device_uuid 기반)
+char g_topicCmd[64];     // fbox/{deviceUUID}/cmd
+char g_topicStatus[64];  // fbox/{deviceUUID}/status
 
 // Heartbeat 관련
 unsigned long lastHeartbeatTime = 0;
@@ -171,6 +179,9 @@ int lastFloorState = HIGH;
 // =============================
 // 5. 함수 프로토타입
 // =============================
+
+// 시스템 ID 관련
+void generateDeviceUUID();
 
 // NVS 설정 관련
 bool loadConfig(AppConfig &cfg);
@@ -235,7 +246,31 @@ void loopSetupMode();
 void loopRunMode();
 
 // =============================
-// 6. NVS 설정 함수
+// 6. 시스템 ID 생성 (MAC 기반)
+// =============================
+
+void generateDeviceUUID() {
+  // ESP32의 고유 MAC 주소 가져오기 (Arduino 스타일)
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  
+  // MAC 주소 문자열 (콜론 포함)
+  snprintf(g_macAddress, sizeof(g_macAddress), 
+           "%02X:%02X:%02X:%02X:%02X:%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  
+  // Device UUID 생성 (콜론 제외, FBOX- 접두어)
+  snprintf(g_deviceUUID, sizeof(g_deviceUUID),
+           "FBOX-%02X%02X%02X%02X%02X%02X",
+           mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+  
+  Serial.println("[SYSTEM] Device UUID 생성 완료");
+  Serial.print("  MAC Address: "); Serial.println(g_macAddress);
+  Serial.print("  Device UUID: "); Serial.println(g_deviceUUID);
+}
+
+// =============================
+// 7. NVS 설정 함수
 // =============================
 
 bool loadConfig(AppConfig &cfg) {
@@ -248,12 +283,13 @@ bool loadConfig(AppConfig &cfg) {
     return false;
   }
 
-  String ssid  = prefs.getString("wifiSsid", "");
-  String pass  = prefs.getString("wifiPass", "");
-  String size  = prefs.getString("size",     "");
-  String devId = prefs.getString("deviceId", "");
-  String host  = prefs.getString("brokerHost", "");
-  uint32_t port = prefs.getUInt("brokerPort", 1883);
+  String ssid     = prefs.getString("wifiSsid", "");
+  String pass     = prefs.getString("wifiPass", "");
+  String size     = prefs.getString("size",     "");
+  String category = prefs.getString("category", "other");
+  String devName  = prefs.getString("deviceName", "");
+  String host     = prefs.getString("brokerHost", "");
+  uint32_t port   = prefs.getUInt("brokerPort", 1883);
   
   // 재고 로드 (전원 꺼져도 유지)
   g_stock = prefs.getInt("stock", 0);
@@ -263,14 +299,17 @@ bool loadConfig(AppConfig &cfg) {
   ssid.toCharArray(cfg.wifiSsid, sizeof(cfg.wifiSsid));
   pass.toCharArray(cfg.wifiPass, sizeof(cfg.wifiPass));
   size.toCharArray(cfg.size,     sizeof(cfg.size));
-  devId.toCharArray(cfg.deviceId,sizeof(cfg.deviceId));
+  category.toCharArray(cfg.category, sizeof(cfg.category));
+  devName.toCharArray(cfg.deviceName, sizeof(cfg.deviceName));
   host.toCharArray(cfg.brokerHost, sizeof(cfg.brokerHost));
   cfg.brokerPort = (uint16_t)port;
 
   Serial.println("[CONFIG] 설정 로드 완료");
   Serial.print("  SSID: "); Serial.println(cfg.wifiSsid);
   Serial.print("  SIZE: "); Serial.println(cfg.size);
-  Serial.print("  DEV : "); Serial.println(cfg.deviceId);
+  Serial.print("  CATEGORY: "); Serial.println(cfg.category);
+  Serial.print("  NAME: "); Serial.println(cfg.deviceName);
+  Serial.print("  UUID: "); Serial.println(g_deviceUUID);
   Serial.print("  HOST: "); Serial.println(cfg.brokerHost);
   Serial.print("  PORT: "); Serial.println(cfg.brokerPort);
   Serial.print("  STOCK: "); Serial.println(g_stock);
@@ -285,7 +324,8 @@ bool saveConfig(const AppConfig &cfg) {
   prefs.putString("wifiSsid",   cfg.wifiSsid);
   prefs.putString("wifiPass",   cfg.wifiPass);
   prefs.putString("size",       cfg.size);
-  prefs.putString("deviceId",   cfg.deviceId);
+  prefs.putString("category",   cfg.category);
+  prefs.putString("deviceName", cfg.deviceName);
   prefs.putString("brokerHost", cfg.brokerHost);
   prefs.putUInt("brokerPort",   cfg.brokerPort);
 
@@ -664,8 +704,9 @@ bool dispenseOne() {
 // =============================
 
 void setupMqttTopics() {
-  snprintf(g_topicCmd, sizeof(g_topicCmd), "fbox/%s/cmd", g_config.deviceId);
-  snprintf(g_topicStatus, sizeof(g_topicStatus), "fbox/%s/status", g_config.deviceId);
+  // MAC 기반 UUID를 사용하여 토픽 구성 (절대 변경되지 않음)
+  snprintf(g_topicCmd, sizeof(g_topicCmd), "fbox/%s/cmd", g_deviceUUID);
+  snprintf(g_topicStatus, sizeof(g_topicStatus), "fbox/%s/status", g_deviceUUID);
   
   Serial.print("[MQTT] CMD Topic: "); Serial.println(g_topicCmd);
   Serial.print("[MQTT] STATUS Topic: "); Serial.println(g_topicStatus);
@@ -718,8 +759,8 @@ bool connectMqtt() {
   mqttClient.setCallback(mqttCallback);
   mqttClient.setBufferSize(512);  // 버퍼 크기 증가
   
-  // 연결 시도 (클라이언트 ID로 deviceId 사용)
-  if (mqttClient.connect(g_config.deviceId)) {
+  // 연결 시도 (클라이언트 ID로 deviceUUID 사용 - MAC 기반)
+  if (mqttClient.connect(g_deviceUUID)) {
     Serial.println("[MQTT] 연결 성공");
     
     // 명령 토픽 구독
@@ -762,14 +803,18 @@ unsigned long getTimestamp() {
 void publishBootComplete() {
   JsonDocument doc;
   doc["event"] = "boot_complete";
-  doc["deviceId"] = g_config.deviceId;
-  doc["size"] = g_config.size;
+  doc["deviceUUID"] = g_deviceUUID;    // MAC 기반 고유 ID (내부 DB 연결용)
+  doc["macAddress"] = g_macAddress;    // 원본 MAC 주소
+  doc["size"] = g_config.size;         // 사이즈 (LCD 표시용)
+  doc["category"] = g_config.category; // 카테고리 (top/pants/towel/sweat_towel/other)
+  doc["deviceName"] = g_config.deviceName; // 상품명 (한글 가능)
   doc["stock"] = g_stock;
   doc["firmwareVersion"] = FIRMWARE_VERSION;
   doc["ipAddress"] = WiFi.localIP().toString();
+  doc["wifiRssi"] = WiFi.RSSI();
   doc["timestamp"] = getTimestamp();
   
-  char json[256];
+  char json[512];
   serializeJson(doc, json);
   publishEvent(json);
 }
@@ -777,10 +822,11 @@ void publishBootComplete() {
 void publishHeartbeat() {
   JsonDocument doc;
   doc["event"] = "heartbeat";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["stock"] = g_stock;
   doc["doorState"] = (digitalRead(LIMIT_DOOR) == LOW) ? "closed" : "open";
   doc["locked"] = g_locked;
+  doc["wifiRssi"] = WiFi.RSSI();
   doc["timestamp"] = getTimestamp();
   
   char json[256];
@@ -791,7 +837,8 @@ void publishHeartbeat() {
 void publishStatus() {
   JsonDocument doc;
   doc["event"] = "status";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
+  doc["macAddress"] = g_macAddress;
   doc["size"] = g_config.size;
   doc["stock"] = g_stock;
   doc["doorState"] = (digitalRead(LIMIT_DOOR) == LOW) ? "closed" : "open";
@@ -800,7 +847,7 @@ void publishStatus() {
   doc["wifiRssi"] = WiFi.RSSI();
   doc["timestamp"] = getTimestamp();
   
-  char json[256];
+  char json[320];
   serializeJson(doc, json);
   publishEvent(json);
 }
@@ -808,7 +855,7 @@ void publishStatus() {
 void publishDispenseComplete() {
   JsonDocument doc;
   doc["event"] = "dispense_complete";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["stock"] = g_stock;
   doc["timestamp"] = getTimestamp();
   
@@ -820,7 +867,7 @@ void publishDispenseComplete() {
 void publishDispenseFailed(const char* reason) {
   JsonDocument doc;
   doc["event"] = "dispense_failed";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["reason"] = reason;
   doc["stock"] = g_stock;
   doc["timestamp"] = getTimestamp();
@@ -833,7 +880,7 @@ void publishDispenseFailed(const char* reason) {
 void publishDoorOpened() {
   JsonDocument doc;
   doc["event"] = "door_opened";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["timestamp"] = getTimestamp();
   
   char json[192];
@@ -844,7 +891,7 @@ void publishDoorOpened() {
 void publishDoorClosed() {
   JsonDocument doc;
   doc["event"] = "door_closed";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["stock"] = g_stock;
   doc["sensorAvailable"] = false;  // 재고 센서 없음
   doc["timestamp"] = getTimestamp();
@@ -857,7 +904,7 @@ void publishDoorClosed() {
 void publishStockUpdated(const char* source) {
   JsonDocument doc;
   doc["event"] = "stock_updated";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["stock"] = g_stock;
   doc["source"] = source;
   doc["needsVerification"] = false;
@@ -871,7 +918,7 @@ void publishStockUpdated(const char* source) {
 void publishStockLow() {
   JsonDocument doc;
   doc["event"] = "stock_low";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["stock"] = g_stock;
   doc["timestamp"] = getTimestamp();
   
@@ -883,7 +930,7 @@ void publishStockLow() {
 void publishStockEmpty() {
   JsonDocument doc;
   doc["event"] = "stock_empty";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["stock"] = 0;
   doc["timestamp"] = getTimestamp();
   
@@ -895,7 +942,7 @@ void publishStockEmpty() {
 void publishError(const char* errorCode, const char* errorMsg) {
   JsonDocument doc;
   doc["event"] = "error";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["errorCode"] = errorCode;
   doc["errorMessage"] = errorMsg;
   doc["timestamp"] = getTimestamp();
@@ -908,7 +955,7 @@ void publishError(const char* errorCode, const char* errorMsg) {
 void publishHomeFailed(const char* reason) {
   JsonDocument doc;
   doc["event"] = "home_failed";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["reason"] = reason;
   doc["timestamp"] = getTimestamp();
   
@@ -920,7 +967,7 @@ void publishHomeFailed(const char* reason) {
 void publishWifiReconnected() {
   JsonDocument doc;
   doc["event"] = "wifi_reconnected";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["ipAddress"] = WiFi.localIP().toString();
   doc["timestamp"] = getTimestamp();
   
@@ -932,7 +979,7 @@ void publishWifiReconnected() {
 void publishMqttReconnected() {
   JsonDocument doc;
   doc["event"] = "mqtt_reconnected";
-  doc["deviceId"] = g_config.deviceId;
+  doc["deviceUUID"] = g_deviceUUID;
   doc["timestamp"] = getTimestamp();
   
   char json[128];
@@ -1120,11 +1167,46 @@ String makeConfigPage(const AppConfig &cfg) {
   html += cfg.size;
   html += "' placeholder='예: 105, M, L, XL' required>";
 
-  // Device ID
-  html += "<label for='deviceId'>Device ID</label>";
-  html += "<input type='text' id='deviceId' name='deviceId' value='";
-  html += cfg.deviceId;
-  html += "' placeholder='예: FBOX-UPPER-105' required>";
+  // Category (드롭다운)
+  html += "<label for='category'>카테고리</label>";
+  html += "<select id='category' name='category' style='width:100%; padding:12px; margin-top:6px; border:1px solid #ddd; border-radius:8px; font-size:16px;'>";
+  
+  // 옵션들 (한글 표시, 영어 값)
+  html += "<option value='top'"; 
+  if (strcmp(cfg.category, "top") == 0) html += " selected";
+  html += ">상의</option>";
+  
+  html += "<option value='pants'";
+  if (strcmp(cfg.category, "pants") == 0) html += " selected";
+  html += ">하의</option>";
+  
+  html += "<option value='towel'";
+  if (strcmp(cfg.category, "towel") == 0) html += " selected";
+  html += ">수건</option>";
+  
+  html += "<option value='sweat_towel'";
+  if (strcmp(cfg.category, "sweat_towel") == 0) html += " selected";
+  html += ">땀수건</option>";
+  
+  html += "<option value='other'";
+  if (strcmp(cfg.category, "other") == 0 || strlen(cfg.category) == 0) html += " selected";
+  html += ">기타</option>";
+  
+  html += "</select>";
+
+  // Device Name (상품명, 한글 가능)
+  html += "<label for='deviceName'>상품명</label>";
+  html += "<input type='text' id='deviceName' name='deviceName' value='";
+  html += cfg.deviceName;
+  html += "' placeholder='예: 운동복 상의 105' maxlength='60'>";
+  html += "<p style='font-size:12px; color:#999; margin-top:4px;'>키오스크에 표시될 이름입니다. 한글 가능.</p>";
+
+  // Device UUID (읽기 전용, MAC 기반 자동 생성)
+  html += "<label>Device UUID (자동 생성)</label>";
+  html += "<input type='text' value='";
+  html += g_deviceUUID;
+  html += "' readonly style='background:#f0f0f0; color:#666;'>";
+  html += "<p style='font-size:12px; color:#999; margin-top:4px;'>MAC 주소 기반으로 자동 생성됩니다.</p>";
 
   // Broker Host
   html += "<label for='brokerHost'>MQTT 브로커 주소</label>";
@@ -1162,15 +1244,16 @@ void handleRoot() {
 void handleSave() {
   Serial.println("[HTTP] POST /save");
 
-  String ssid  = server.arg("wifiSsid");
-  String pass  = server.arg("wifiPass");
-  String size  = server.arg("size");
-  String devId = server.arg("deviceId");
-  String host  = server.arg("brokerHost");
-  String portS = server.arg("brokerPort");
-  String stockS = server.arg("stock");
+  String ssid     = server.arg("wifiSsid");
+  String pass     = server.arg("wifiPass");
+  String size     = server.arg("size");
+  String category = server.arg("category");
+  String devName  = server.arg("deviceName");
+  String host     = server.arg("brokerHost");
+  String portS    = server.arg("brokerPort");
+  String stockS   = server.arg("stock");
 
-  if (ssid.length() == 0 || pass.length() == 0 || devId.length() == 0 || host.length() == 0) {
+  if (ssid.length() == 0 || pass.length() == 0 || host.length() == 0) {
     server.send(400, "text/plain", "필수 값이 비어 있습니다.");
     return;
   }
@@ -1178,7 +1261,8 @@ void handleSave() {
   ssid.toCharArray(g_config.wifiSsid, sizeof(g_config.wifiSsid));
   pass.toCharArray(g_config.wifiPass, sizeof(g_config.wifiPass));
   size.toCharArray(g_config.size,     sizeof(g_config.size));
-  devId.toCharArray(g_config.deviceId,sizeof(g_config.deviceId));
+  category.toCharArray(g_config.category, sizeof(g_config.category));
+  devName.toCharArray(g_config.deviceName, sizeof(g_config.deviceName));
   host.toCharArray(g_config.brokerHost, sizeof(g_config.brokerHost));
   g_config.brokerPort = (uint16_t)(portS.toInt() > 0 ? portS.toInt() : 1883);
   
@@ -1342,8 +1426,9 @@ void startRunMode() {
   showIdleScreen();
 
   Serial.println("=================================");
-  Serial.println("F-BOX v2.0 운영 모드 시작");
-  Serial.print("Device ID: "); Serial.println(g_config.deviceId);
+  Serial.println("F-BOX v2.1 운영 모드 시작");
+  Serial.print("Device UUID: "); Serial.println(g_deviceUUID);
+  Serial.print("MAC Address: "); Serial.println(g_macAddress);
   Serial.print("Size: "); Serial.println(g_config.size);
   Serial.print("Stock: "); Serial.println(g_stock);
   Serial.println("=================================");
@@ -1528,9 +1613,16 @@ void setup() {
   delay(500);
 
   Serial.println();
-  Serial.println("===== F-BOX v2.0 시작 =====");
+  Serial.println("===== F-BOX v2.1 시작 =====");
   Serial.print("Firmware: ");
   Serial.println(FIRMWARE_VERSION);
+
+  // 1. WiFi 초기화 (MAC 주소 읽기 위해 필요)
+  WiFi.mode(WIFI_STA);
+  delay(100);
+  
+  // 2. MAC 기반 Device UUID 생성 (항상 동일하게 유지됨)
+  generateDeviceUUID();
 
   // TFT 백라이트
   pinMode(TFT_BL, OUTPUT);
@@ -1544,7 +1636,6 @@ void setup() {
   // 기본 config 초기화
   memset(&g_config, 0, sizeof(g_config));
   strncpy(g_config.size, "---", sizeof(g_config.size) - 1);
-  strncpy(g_config.deviceId, "FBOX-01", sizeof(g_config.deviceId) - 1);
   strncpy(g_config.brokerHost, "192.168.0.10", sizeof(g_config.brokerHost) - 1);
   g_config.brokerPort = 1883;
 

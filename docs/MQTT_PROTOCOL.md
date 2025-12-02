@@ -17,17 +17,23 @@ F-BOX 시스템은 라즈베리파이(MQTT 브로커)와 ESP32 기기 간 MQTT �
 
 ### 명령 토픽 (라즈베리파이 → ESP32)
 ```
-fbox/{deviceId}/cmd
+fbox/{deviceUUID}/cmd
 ```
 - 라즈베리파이가 특정 ESP32 기기에 명령을 전송하는 토픽
-- 예시: `fbox/FBOX-UPPER-105/cmd`
+- deviceUUID는 MAC 주소 기반 자동 생성 (예: FBOX-004B1238C424)
+- 예시: `fbox/FBOX-004B1238C424/cmd`
 
 ### 이벤트 토픽 (ESP32 → 라즈베리파이)
 ```
-fbox/{deviceId}/status
+fbox/{deviceUUID}/status
 ```
 - ESP32 기기가 상태 변화나 이벤트를 라즈베리파이에 보고하는 토픽
-- 예시: `fbox/FBOX-UPPER-105/status`
+- 예시: `fbox/FBOX-004B1238C424/status`
+
+### Device UUID 생성 규칙
+- **형식**: `FBOX-{MAC주소 12자리}`
+- **예시**: MAC `00:4B:12:38:C4:24` → UUID `FBOX-004B1238C424`
+- **특징**: MAC 기반이므로 변경 불가, 상품명/사이즈 변경해도 기록 유지
 
 ### 락카 배정 토픽 (락카키 대여기 → 운동복 대여기)
 ```
@@ -178,19 +184,40 @@ ESP32를 재시작합니다.
 
 #### boot_complete - 부팅 완료
 ESP32가 부팅을 완료하고 MQTT에 연결되었을 때 발생합니다.
+**이 이벤트로 서버에 기기 및 상품이 자동 등록됩니다.**
 
 **메시지 포맷:**
 ```json
 {
   "event": "boot_complete",
-  "deviceId": "FBOX-UPPER-105",
+  "deviceUUID": "FBOX-004B1238C424",
+  "macAddress": "00:4B:12:38:C4:24",
+  "category": "top",
   "size": "105",
-  "stock": 15,
-  "firmwareVersion": "v1.0.0",
-  "ipAddress": "192.168.1.100",
+  "deviceName": "운동복 상의 105",
+  "stock": 30,
+  "firmwareVersion": "v2.1.0",
+  "ipAddress": "192.168.0.28",
+  "wifiRssi": -35,
   "timestamp": 1733097600
 }
 ```
+
+**필드 설명:**
+- `deviceUUID`: MAC 기반 고유 ID (내부 DB 연결용)
+- `macAddress`: 원본 MAC 주소
+- `category`: 카테고리 (top/pants/towel/sweat_towel/other)
+- `size`: 사이즈 (LCD 표시용)
+- `deviceName`: 상품명 (한글 가능, 키오스크 표시용)
+- `stock`: 현재 재고
+- `firmwareVersion`: 펌웨어 버전
+- `ipAddress`: ESP32 IP 주소
+- `wifiRssi`: Wi-Fi 신호 강도
+
+**서버 동작:**
+1. device_registry 테이블에 기기 등록/업데이트
+2. products 테이블에 상품 자동 생성 (device_uuid로 연결)
+3. Google Sheets로 동기화
 
 ---
 
@@ -201,10 +228,11 @@ ESP32가 부팅을 완료하고 MQTT에 연결되었을 때 발생합니다.
 ```json
 {
   "event": "heartbeat",
-  "deviceId": "FBOX-UPPER-105",
-  "stock": 15,
+  "deviceUUID": "FBOX-004B1238C424",
+  "stock": 30,
   "doorState": "closed",
   "locked": false,
+  "wifiRssi": -35,
   "timestamp": 1733097600
 }
 ```
@@ -218,13 +246,13 @@ STATUS 명령에 대한 응답 또는 주기적 상태 보고입니다.
 ```json
 {
   "event": "status",
-  "deviceId": "FBOX-UPPER-105",
+  "deviceUUID": "FBOX-004B1238C424",
   "size": "105",
-  "stock": 15,
+  "stock": 30,
   "doorState": "closed",
   "floorState": "reached",
   "locked": false,
-  "wifiRssi": -45,
+  "wifiRssi": -35,
   "timestamp": 1733097600
 }
 ```
@@ -244,8 +272,8 @@ STATUS 명령에 대한 응답 또는 주기적 상태 보고입니다.
 ```json
 {
   "event": "dispense_complete",
-  "deviceId": "FBOX-UPPER-105",
-  "stock": 14,
+  "deviceUUID": "FBOX-004B1238C424",
+  "stock": 29,
   "timestamp": 1733097600
 }
 ```
@@ -259,7 +287,7 @@ STATUS 명령에 대한 응답 또는 주기적 상태 보고입니다.
 ```json
 {
   "event": "door_opened",
-  "deviceId": "FBOX-UPPER-105",
+  "deviceUUID": "FBOX-004B1238C424",
   "timestamp": 1733097600
 }
 ```
@@ -273,8 +301,8 @@ STATUS 명령에 대한 응답 또는 주기적 상태 보고입니다.
 ```json
 {
   "event": "door_closed",
-  "deviceId": "FBOX-UPPER-105",
-  "stock": 15,
+  "deviceUUID": "FBOX-004B1238C424",
+  "stock": 30,
   "sensorAvailable": false,
   "timestamp": 1733097600
 }
@@ -293,8 +321,8 @@ STATUS 명령에 대한 응답 또는 주기적 상태 보고입니다.
 ```json
 {
   "event": "stock_updated",
-  "deviceId": "FBOX-UPPER-105",
-  "stock": 20,
+  "deviceUUID": "FBOX-004B1238C424",
+  "stock": 30,
   "source": "manual",
   "needsVerification": false,
   "timestamp": 1733097600

@@ -36,20 +36,21 @@ CREATE TABLE IF NOT EXISTS usage_logs (
 -- 2. 상품 및 가격 관리
 -- =============================
 
--- 상품 가격표 (헬스장별 커스터마이징)
+-- 상품 정보 (ESP32 기기 등록 시 자동 생성)
 CREATE TABLE IF NOT EXISTS products (
     product_id TEXT PRIMARY KEY,
     gym_id TEXT NOT NULL DEFAULT 'GYM001',
-    category TEXT NOT NULL,          -- 'upper', 'lower', 'towel'
-    size TEXT,                       -- '95', '100', '105', '110', '115', 'XL', 'FREE' 등
-    name TEXT NOT NULL,              -- 표시명 ("운동복 상의 105")
-    device_id TEXT NOT NULL,         -- 연결된 F-BOX 기기 ID
+    category TEXT NOT NULL,          -- 'top', 'pants', 'towel', 'sweat_towel', 'other'
+    size TEXT,                       -- '95', '100', '105', '110', '115', 'FREE' 등
+    name TEXT NOT NULL,              -- 상품명 (ESP32에서 설정, 한글 가능)
+    device_uuid TEXT,                -- 연결된 F-BOX 기기 UUID (MAC 기반)
     stock INT DEFAULT 0,             -- 현재 재고 (device_cache와 동기화)
     enabled BOOLEAN DEFAULT 1,       -- 활성화 여부
     display_order INT DEFAULT 0,     -- 화면 표시 순서
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(gym_id, device_id)
+    UNIQUE(gym_id, device_uuid),
+    FOREIGN KEY (device_uuid) REFERENCES device_registry(device_uuid)
 );
 
 -- =============================
@@ -68,16 +69,34 @@ CREATE TABLE IF NOT EXISTS locker_mapping (
 -- 4. F-BOX 기기 관리
 -- =============================
 
--- F-BOX 기기 상태 캐시
+-- F-BOX 기기 레지스트리 (MAC 기반 고유 ID)
+CREATE TABLE IF NOT EXISTS device_registry (
+    device_uuid TEXT PRIMARY KEY,    -- MAC 기반 UUID (예: "FBOX-A4CF12345678")
+    mac_address TEXT UNIQUE,         -- 원본 MAC 주소 (예: "A4:CF:12:34:56:78")
+    device_name TEXT,                -- 관리자가 설정하는 표시 이름 (예: "상의 105호기")
+    size TEXT,                       -- 사이즈 (예: "105")
+    category TEXT,                   -- 카테고리: 'upper', 'lower', 'towel'
+    product_id TEXT,                 -- 연결된 상품 ID
+    ip_address TEXT,                 -- 마지막 IP 주소
+    firmware_version TEXT,           -- 펌웨어 버전
+    first_seen_at TIMESTAMP,         -- 최초 연결 시각
+    last_seen_at TIMESTAMP,          -- 마지막 연결 시각
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
+);
+
+-- F-BOX 기기 상태 캐시 (실시간 상태)
 CREATE TABLE IF NOT EXISTS device_cache (
-    device_id TEXT PRIMARY KEY,
+    device_uuid TEXT PRIMARY KEY,    -- MAC 기반 UUID (device_registry 참조)
     size TEXT,                       -- ESP32의 size (예: "105")
     stock INT DEFAULT 0,
     door_state TEXT,                 -- 'open', 'closed'
     floor_state TEXT,                -- 'reached', 'moving'
     locked BOOLEAN DEFAULT 0,        -- 점검 모드 여부
+    wifi_rssi INT,                   -- Wi-Fi 신호 강도
     last_heartbeat TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (device_uuid) REFERENCES device_registry(device_uuid)
 );
 
 -- =============================
@@ -90,14 +109,15 @@ CREATE TABLE IF NOT EXISTS rental_logs (
     member_id TEXT NOT NULL,
     locker_number INT,
     product_id TEXT NOT NULL,
-    device_id TEXT NOT NULL,
+    device_uuid TEXT NOT NULL,       -- F-BOX 기기 UUID (MAC 기반)
     quantity INT DEFAULT 1,          -- 대여 수량 (= 차감 횟수)
     count_before INT NOT NULL,       -- 대여 전 남은 횟수
     count_after INT NOT NULL,        -- 대여 후 남은 횟수
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     synced_to_sheets BOOLEAN DEFAULT 0,
     FOREIGN KEY (member_id) REFERENCES members(member_id),
-    FOREIGN KEY (product_id) REFERENCES products(product_id)
+    FOREIGN KEY (product_id) REFERENCES products(product_id),
+    FOREIGN KEY (device_uuid) REFERENCES device_registry(device_uuid)
 );
 
 -- =============================
@@ -141,37 +161,23 @@ CREATE TABLE IF NOT EXISTS mqtt_events (
 CREATE INDEX IF NOT EXISTS idx_usage_logs_member ON usage_logs(member_id);
 CREATE INDEX IF NOT EXISTS idx_usage_logs_created ON usage_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_products_gym ON products(gym_id, enabled);
-CREATE INDEX IF NOT EXISTS idx_products_device ON products(device_id);
+CREATE INDEX IF NOT EXISTS idx_products_device_uuid ON products(device_uuid);
 CREATE INDEX IF NOT EXISTS idx_rental_logs_member ON rental_logs(member_id);
 CREATE INDEX IF NOT EXISTS idx_rental_logs_created ON rental_logs(created_at);
 CREATE INDEX IF NOT EXISTS idx_rental_logs_sync ON rental_logs(synced_to_sheets);
+CREATE INDEX IF NOT EXISTS idx_rental_logs_device_uuid ON rental_logs(device_uuid);
 CREATE INDEX IF NOT EXISTS idx_locker_mapping_member ON locker_mapping(member_id);
 CREATE INDEX IF NOT EXISTS idx_mqtt_events_device ON mqtt_events(device_id);
 CREATE INDEX IF NOT EXISTS idx_mqtt_events_created ON mqtt_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_device_registry_mac ON device_registry(mac_address);
+CREATE INDEX IF NOT EXISTS idx_device_registry_product ON device_registry(product_id);
 
 -- =============================
 -- 9. 초기 데이터
 -- =============================
 
--- 예시 상품 데이터 (운동복 상의) - 횟수 기반 (1개 = 1회)
-INSERT OR IGNORE INTO products (product_id, category, size, name, device_id, enabled, display_order) VALUES
-('P-UPPER-095', 'upper', '95',  '운동복 상의 95',  'FBOX-UPPER-095', 1, 1),
-('P-UPPER-100', 'upper', '100', '운동복 상의 100', 'FBOX-UPPER-100', 1, 2),
-('P-UPPER-105', 'upper', '105', '운동복 상의 105', 'FBOX-UPPER-105', 1, 3),
-('P-UPPER-110', 'upper', '110', '운동복 상의 110', 'FBOX-UPPER-110', 1, 4),
-('P-UPPER-115', 'upper', '115', '운동복 상의 115', 'FBOX-UPPER-115', 1, 5);
-
--- 예시 상품 데이터 (운동복 하의) - 횟수 기반 (1개 = 1회)
-INSERT OR IGNORE INTO products (product_id, category, size, name, device_id, enabled, display_order) VALUES
-('P-LOWER-095', 'lower', '95',  '운동복 하의 95',  'FBOX-LOWER-095', 1, 11),
-('P-LOWER-100', 'lower', '100', '운동복 하의 100', 'FBOX-LOWER-100', 1, 12),
-('P-LOWER-105', 'lower', '105', '운동복 하의 105', 'FBOX-LOWER-105', 1, 13),
-('P-LOWER-110', 'lower', '110', '운동복 하의 110', 'FBOX-LOWER-110', 1, 14),
-('P-LOWER-115', 'lower', '115', '운동복 하의 115', 'FBOX-LOWER-115', 1, 15);
-
--- 예시 상품 데이터 (수건) - 횟수 기반 (1개 = 1회)
-INSERT OR IGNORE INTO products (product_id, category, size, name, device_id, enabled, display_order) VALUES
-('P-TOWEL', 'towel', '', '수건', 'FBOX-TOWEL-01', 1, 21);
+-- 상품 데이터는 ESP32 기기 등록 시 자동 생성됨
+-- (category + size + deviceName → products 테이블에 자동 INSERT)
 
 -- 예시 프로모션 데이터 (10회 이상 충전 시 1회 보너스)
 INSERT OR IGNORE INTO promotions (promo_id, name, promo_type, condition_count, reward_count, active) VALUES
@@ -180,4 +186,3 @@ INSERT OR IGNORE INTO promotions (promo_id, name, promo_type, condition_count, r
 -- 예시 회원 데이터 (테스트용)
 INSERT OR IGNORE INTO members (member_id, name, remaining_count, total_charged, total_used) VALUES
 ('TEST001', '테스트회원', 10, 10, 0);
-
