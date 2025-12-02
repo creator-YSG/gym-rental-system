@@ -6,13 +6,14 @@
 }
 
 body {
-    font-family: 'Arial', sans-serif;
+    font-family: 'Noto Sans CJK KR', 'NanumSquareRound', 'Noto Serif CJK KR', 'NanumGothic', sans-serif;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     min-height: 100vh;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
+    -webkit-font-smoothing: antialiased;
 }
 
 .container {
@@ -63,5 +64,43 @@ h1 {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* 뒤로가기 버튼 */
+.back-btn {
+    position: fixed;
+    top: 30px;
+    left: 30px;
+    padding: 20px 40px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    text-decoration: none;
+    border-radius: 15px;
+    font-size: 28px;
+    font-weight: bold;
+    border: 2px solid white;
+    transition: all 0.3s ease;
+}
+
+.back-btn:active {
+    transform: scale(0.95);
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* 서브 페이지 스타일 */
+.subpage {
+    text-align: center;
+    padding: 40px;
+}
+
+.subpage h1 {
+    font-size: 56px;
+    margin-bottom: 40px;
+}
+
+.subpage p {
+    font-size: 32px;
+    margin: 20px 0;
+    line-height: 1.6;
 }
 

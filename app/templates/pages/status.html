@@ -2,11 +2,23 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>재고현황</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
-    <h1>재고 현황</h1>
-    <!-- TODO: 구현 예정 -->
+    <a href="/" class="back-btn">← 홈</a>
+    
+    <div class="container subpage">
+        <h1>📊 재고 현황</h1>
+        <div style="margin-top: 60px;">
+            <p style="font-size: 40px; margin: 30px 0;">
+                🏃 <strong>운동복:</strong> 25개 남음
+            </p>
+            <p style="font-size: 40px; margin: 30px 0;">
+                🧺 <strong>수건:</strong> 18개 남음
+            </p>
+        </div>
+    </div>
 </body>
 </html>
-
