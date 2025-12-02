@@ -389,6 +389,48 @@ python run.py
 
 ---
 
+## 개발 TODO (우선순위 낮음)
+
+### 관리자 기능
+
+**현재 상태:** Google Sheets 직접 수정으로 운영
+
+**향후 구현 가능한 옵션:**
+
+1. **관리자 웹페이지 (라즈베리파이)**
+   - URL: `http://192.168.0.27:5000/admin`
+   - 기능: 회원 선택 → 충전 횟수 입력 → 버튼 클릭
+   - 장점: 1번 클릭으로 members + usage_logs 자동 업데이트
+   - 단점: 같은 네트워크에서만 접속 가능
+
+2. **Google Sheets Apps Script**
+   - members 시트 수정 시 자동으로 usage_history에 기록 추가
+   - 장점: 어디서든 접속 가능, 1곳만 수정
+   - 단점: 스크립트 작성 필요
+
+3. **Google Sheets 직접 수정 (현재)**
+   - members 시트 + usage_history 시트 둘 다 수동 수정
+   - 장점: 별도 개발 불필요
+   - 단점: 2곳 수정 번거로움
+
+**충전 시 수정해야 할 데이터:**
+```
+1. members 시트
+   - remaining_count: 기존값 + 충전횟수
+   - total_charged: 기존값 + 충전횟수
+
+2. usage_history 시트 (새 행 추가)
+   - member_id: 회원 ID
+   - count_change: +10 (충전 횟수)
+   - counts_before: 충전 전 잔여 횟수
+   - counts_after: 충전 후 잔여 횟수
+   - type: "charge"
+   - description: "10회 충전 (현금)" 등
+   - created_at: 충전 시각
+```
+
+---
+
 ## 라이선스
 
 MIT License
@@ -404,6 +446,6 @@ MIT License
 ## 버전 이력
 
 - **v1.0.0** (2024-12-01): 초기 시스템 설계 및 문서화
-- **v1.1.0** (2024-12-01): 금액 기반 시스템으로 전환
-- **v2.0.0** (계획): MQTT 통신 및 전체 시스템 통합
+- **v1.1.0** (2024-12-01): 금액 기반 → 횟수 기반 시스템으로 전환
+- **v2.0.0** (2024-12-02): MQTT 통신 및 ESP32 연동 구현
 
