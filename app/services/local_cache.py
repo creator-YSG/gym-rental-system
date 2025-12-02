@@ -331,6 +331,10 @@ class LocalCache:
         """기기 상태 조회 (메모리 캐시)"""
         return self._device_cache.get(device_id)
     
+    def get_all_devices(self) -> List[Dict]:
+        """모든 기기 상태 조회"""
+        return list(self._device_cache.values())
+    
     def update_device_status(self, device_id: str, **kwargs) -> bool:
         """
         기기 상태 업데이트
@@ -461,6 +465,70 @@ class LocalCache:
                 WHERE id IN ({placeholders})
             ''', rental_ids)
             self.conn.commit()
+    
+    # =============================
+    # MQTT 이벤트 로깅
+    # =============================
+    
+    def log_mqtt_event(self, device_id: str, event_type: str, payload: dict) -> int:
+        """
+        MQTT 이벤트 DB 로깅
+        
+        Args:
+            device_id: 기기 ID
+            event_type: 이벤트 타입
+            payload: 이벤트 페이로드 (JSON으로 저장)
+        
+        Returns:
+            event_id
+        """
+        import json
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                INSERT INTO mqtt_events (device_id, event_type, payload, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (device_id, event_type, json.dumps(payload), datetime.now().isoformat()))
+            
+            event_id = cursor.lastrowid
+            self.conn.commit()
+            
+            return event_id
+    
+    def get_recent_events(self, device_id: str = None, limit: int = 50) -> List[Dict]:
+        """
+        최근 MQTT 이벤트 조회
+        
+        Args:
+            device_id: 기기 ID (None이면 전체)
+            limit: 조회 개수
+        """
+        import json
+        with self.lock:
+            cursor = self.conn.cursor()
+            
+            if device_id:
+                cursor.execute('''
+                    SELECT * FROM mqtt_events 
+                    WHERE device_id = ?
+                    ORDER BY created_at DESC 
+                    LIMIT ?
+                ''', (device_id, limit))
+            else:
+                cursor.execute('''
+                    SELECT * FROM mqtt_events 
+                    ORDER BY created_at DESC 
+                    LIMIT ?
+                ''', (limit,))
+            
+            results = []
+            for row in cursor.fetchall():
+                event = dict(row)
+                if event.get('payload'):
+                    event['payload'] = json.loads(event['payload'])
+                results.append(event)
+            
+            return results
     
     # =============================
     # 동기화

@@ -31,6 +31,9 @@ class MQTTService:
         self.client = mqtt.Client(client_id='fbox-server', clean_session=True)
         self.connected = False
         
+        # LocalCache 참조 (이벤트 로깅용)
+        self.local_cache = None
+        
         # 이벤트 핸들러 등록
         self.event_handlers: Dict[str, Callable] = {}
         
@@ -137,6 +140,13 @@ class MQTTService:
             return
         
         print(f"[MQTT] ← {device_id}: {event_type}")
+        
+        # DB 로깅 (local_cache가 설정되어 있으면)
+        if hasattr(self, 'local_cache') and self.local_cache:
+            try:
+                self.local_cache.log_mqtt_event(device_id, event_type, payload)
+            except Exception as e:
+                print(f"[MQTT] DB 로깅 오류: {e}")
         
         # 등록된 핸들러 실행
         if event_type in self.event_handlers:
@@ -269,6 +279,11 @@ class MQTTService:
         """연결 상태 확인"""
         return self.connected
     
+    def set_local_cache(self, local_cache):
+        """LocalCache 인스턴스 설정 (이벤트 로깅용)"""
+        self.local_cache = local_cache
+        print("[MQTT] LocalCache 연결됨")
+    
     def __enter__(self):
         self.connect()
         return self
@@ -349,6 +364,38 @@ def handle_error(device_id: str, payload: Dict):
     print(f"[Event] {device_id} ❌ 에러: [{error_code}] {error_message}")
 
 
+def handle_status(device_id: str, payload: Dict):
+    """상태 응답 이벤트 핸들러"""
+    size = payload.get('size')
+    stock = payload.get('stock')
+    door_state = payload.get('doorState')
+    floor_state = payload.get('floorState')
+    locked = payload.get('locked', False)
+    rssi = payload.get('wifiRssi')
+    
+    print(f"[Event] {device_id} 상태:")
+    print(f"  - Size: {size}, Stock: {stock}")
+    print(f"  - Door: {door_state}, Floor: {floor_state}")
+    print(f"  - Locked: {locked}, RSSI: {rssi}dBm")
+
+
+def handle_home_failed(device_id: str, payload: Dict):
+    """홈 복귀 실패 이벤트 핸들러"""
+    reason = payload.get('reason')
+    print(f"[Event] {device_id} ⚠️ 홈 복귀 실패: {reason}")
+
+
+def handle_wifi_reconnected(device_id: str, payload: Dict):
+    """Wi-Fi 재연결 이벤트 핸들러"""
+    ip = payload.get('ipAddress')
+    print(f"[Event] {device_id} 📶 Wi-Fi 재연결: {ip}")
+
+
+def handle_mqtt_reconnected(device_id: str, payload: Dict):
+    """MQTT 재연결 이벤트 핸들러"""
+    print(f"[Event] {device_id} 🔄 MQTT 재연결")
+
+
 # =============================
 # 기본 핸들러 등록 유틸리티
 # =============================
@@ -364,6 +411,7 @@ def register_default_handlers(mqtt_service: MQTTService, local_cache=None):
     # 정상 작동 이벤트
     mqtt_service.register_event_handler('boot_complete', handle_boot_complete)
     mqtt_service.register_event_handler('heartbeat', handle_heartbeat)
+    mqtt_service.register_event_handler('status', handle_status)
     mqtt_service.register_event_handler('dispense_complete', handle_dispense_complete)
     mqtt_service.register_event_handler('door_opened', handle_door_opened)
     mqtt_service.register_event_handler('door_closed', handle_door_closed)
@@ -376,6 +424,11 @@ def register_default_handlers(mqtt_service: MQTTService, local_cache=None):
     # 에러 이벤트
     mqtt_service.register_event_handler('dispense_failed', handle_dispense_failed)
     mqtt_service.register_event_handler('error', handle_error)
+    mqtt_service.register_event_handler('home_failed', handle_home_failed)
+    
+    # 재연결 이벤트
+    mqtt_service.register_event_handler('wifi_reconnected', handle_wifi_reconnected)
+    mqtt_service.register_event_handler('mqtt_reconnected', handle_mqtt_reconnected)
     
     # LocalCache와 연동하는 핸들러 (선택)
     if local_cache:
