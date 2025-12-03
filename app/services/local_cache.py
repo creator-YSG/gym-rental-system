@@ -555,8 +555,13 @@ class LocalCache:
     # =============================
     
     def get_device(self, device_uuid: str) -> Optional[Dict]:
-        """기기 상태 조회 (메모리 캐시)"""
-        return self._device_cache.get(device_uuid)
+        """기기 상태 조회 (DB에서 직접 조회)"""
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT * FROM device_cache WHERE device_uuid = ?', (device_uuid,))
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
     
     def get_all_devices(self) -> List[Dict]:
         """모든 기기 상태 조회"""
