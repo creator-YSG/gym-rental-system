@@ -297,6 +297,40 @@ sqlite3 /home/pi/gym-rental-system/instance/fbox_local.db \
 
 ---
 
+---
+
+## 추가 문제: RentalService 중복 MQTT 연결
+
+### 문제 5: 5초마다 MQTT 재연결
+
+**증상:**
+```
+Client fbox-server-9925 already connected, closing old connection.
+New client connected from ::1:53927 as fbox-server-9925
+```
+- Mosquitto 로그에 5초마다 재연결 기록
+- DISPENSE 명령 전송 실패
+
+**원인:**
+- `rental_service.py`의 `mqtt_service` 프로퍼티가 **자체 MQTTService 인스턴스 생성**
+- 앱 초기화의 `mqtt_service`와 **같은 client_id**로 연결 시도
+- 두 클라이언트가 경쟁하면서 서로 끊어버림
+
+**해결:**
+```python
+# rental_service.py
+def set_mqtt_service(self, mqtt_service):
+    """외부에서 MQTT 서비스 주입"""
+    self._mqtt_service = mqtt_service
+
+# main.py
+_rental_service = RentalService(get_local_cache())
+if hasattr(current_app, 'mqtt_service'):
+    _rental_service.set_mqtt_service(current_app.mqtt_service)
+```
+
+---
+
 ## 변경 이력
 
 | 날짜 | 변경 내용 | 파일 |
@@ -306,4 +340,5 @@ sqlite3 /home/pi/gym-rental-system/instance/fbox_local.db \
 | 2025-12-03 | 핸들러 중복 등록 제거 | `app/__init__.py` |
 | 2025-12-03 | get_device() DB 직접 조회 | `local_cache.py` |
 | 2025-12-03 | dispense_complete에서 재고 업데이트 | `rental_service.py` |
+| 2025-12-03 | RentalService에 앱 mqtt_service 주입 | `rental_service.py`, `main.py` |
 
