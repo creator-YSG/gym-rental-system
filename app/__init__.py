@@ -38,8 +38,8 @@ def create_app(config_name='default'):
     except OSError:
         pass
     
-    # SocketIO 초기화
-    socketio.init_app(app, cors_allowed_origins="*", async_mode='eventlet')
+    # SocketIO 초기화 (threading 모드 - paho-mqtt와 호환)
+    socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
     
     # LocalCache 초기화
     try:
