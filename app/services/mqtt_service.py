@@ -28,7 +28,10 @@ class MQTTService:
         self.broker_host = broker_host
         self.broker_port = broker_port
         
-        self.client = mqtt.Client(client_id='fbox-server', clean_session=True)
+        # client_id에 PID 추가하여 고유하게 (재시작 시에만 변경)
+        import os
+        client_id = f'fbox-server-{os.getpid()}'
+        self.client = mqtt.Client(client_id=client_id, clean_session=True)
         self.connected = False
         self._reconnecting = False
         
@@ -43,8 +46,8 @@ class MQTTService:
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
         
-        # 자동 재연결 설정 (min 1초, max 30초)
-        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
+        # 자동 재연결 설정 (min 5초, max 120초) - 너무 빠르면 충돌 발생
+        self.client.reconnect_delay_set(min_delay=5, max_delay=120)
         
         print(f"[MQTT] 초기화: {broker_host}:{broker_port}")
     
