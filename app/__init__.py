@@ -11,11 +11,13 @@ socketio = SocketIO()
 # 전역 서비스 인스턴스
 mqtt_service = None
 local_cache = None
+sheets_sync = None
+sync_scheduler = None
 
 
 def create_app(config_name='default'):
     """Flask 애플리케이션 팩토리"""
-    global mqtt_service, local_cache
+    global mqtt_service, local_cache, sheets_sync, sync_scheduler
     
     app = Flask(__name__)
     
@@ -74,6 +76,39 @@ def create_app(config_name='default'):
     except Exception as e:
         print(f"[App] MQTT 초기화 실패: {e}")
     
+    # Google Sheets 동기화 초기화
+    try:
+        from app.services.sheets_sync import SheetsSync
+        from app.services.sync_scheduler import SyncScheduler
+        
+        # credentials 경로 (라즈베리파이 또는 로컬)
+        creds_path = os.path.join(os.path.dirname(app.root_path), 'config', 'credentials.json')
+        
+        if os.path.exists(creds_path) and local_cache:
+            sheets_sync = SheetsSync(credentials_path=creds_path)
+            
+            if sheets_sync.connect():
+                print("[App] Google Sheets 연결 성공")
+                
+                # 시작 시 members 다운로드
+                sheets_sync.download_members(local_cache)
+                
+                # 동기화 스케줄러 시작
+                sync_scheduler = SyncScheduler(sheets_sync, local_cache)
+                sync_scheduler.start()
+                
+                app.sheets_sync = sheets_sync
+                app.sync_scheduler = sync_scheduler
+            else:
+                print("[App] Google Sheets 연결 실패")
+        else:
+            print(f"[App] Google Sheets 건너뜀 (credentials 없음: {creds_path})")
+            
+    except Exception as e:
+        print(f"[App] Google Sheets 초기화 실패: {e}")
+        import traceback
+        traceback.print_exc()
+    
     # 블루프린트 등록
     from app.routes import main_bp, api_locker_bp, api_device_bp
     app.register_blueprint(main_bp)
@@ -100,4 +135,14 @@ def get_mqtt_service():
 def get_local_cache():
     """LocalCache 인스턴스 반환"""
     return local_cache
+
+
+def get_sheets_sync():
+    """SheetsSync 인스턴스 반환"""
+    return sheets_sync
+
+
+def get_sync_scheduler():
+    """SyncScheduler 인스턴스 반환"""
+    return sync_scheduler
 

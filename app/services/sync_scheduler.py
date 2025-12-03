@@ -116,7 +116,7 @@ class SyncScheduler:
         event_count = self.sheets_sync.upload_event_logs(self.local_cache)
         
         # 대여 로그 업로드
-        rental_count = self.sheets_sync.upload_rental_logs(self.local_cache)
+        rental_count = self.sheets_sync.upload_rentals(self.local_cache)
         
         if event_count > 0 or rental_count > 0:
             print(f"[SyncScheduler] 업로드: 이벤트 {event_count}건, 대여 {rental_count}건")
