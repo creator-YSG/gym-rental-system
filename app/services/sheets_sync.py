@@ -16,7 +16,7 @@ import time
 class SheetsSync:
     """Google Sheets 동기화 클래스"""
     
-    def __init__(self, credentials_path: str, spreadsheet_name: str = 'F-BOX 관리 시스템'):
+    def __init__(self, credentials_path: str, spreadsheet_name: str = 'F-BOX-DB-TEST'):
         """
         초기화
         
