@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 import threading
 import time
 
-# 옵셔널 임포트 (LocalCache, MQTTService)
+# 옵셔널 임포트 (LocalCache, MQTTService, EventLogger)
 try:
     from app.services.local_cache import LocalCache
 except Exception as e:
@@ -25,6 +25,12 @@ try:
 except Exception as e:
     print(f"[RentalService] MQTTService 임포트 실패: {e}")
     MQTTService = None
+
+try:
+    from app.services.event_logger import EventLogger
+except Exception as e:
+    print(f"[RentalService] EventLogger 임포트 실패: {e}")
+    EventLogger = None
 
 
 class DispenseResult:
@@ -79,6 +85,14 @@ class RentalService:
         
         self._mqtt_service = mqtt_service
         self._handlers_registered = False
+        
+        # EventLogger 초기화
+        self._event_logger = None
+        if self.local_cache and EventLogger:
+            try:
+                self._event_logger = EventLogger(self.local_cache)
+            except Exception as e:
+                print(f"[RentalService] EventLogger 초기화 실패: {e}")
     
     @property
     def mqtt_service(self) -> Optional[MQTTService]:
@@ -276,10 +290,31 @@ class RentalService:
                         count_before=count_before,
                         count_after=count_after
                     )
+                    
+                    # 이벤트 로깅: 대여 성공
+                    if self._event_logger:
+                        self._event_logger.log_rental_success(
+                            member_id=member_id,
+                            product_id=item['product_id'],
+                            device_uuid=item['device_uuid'],
+                            quantity=item['dispensed_count'],
+                            count_before=count_before,
+                            count_after=count_after
+                        )
                 except Exception as e:
                     print(f"[RentalService] 대여 로그 기록 실패: {e}")
         else:
             count_after = remaining
+        
+        # 이벤트 로깅: 대여 실패
+        if self._event_logger:
+            for item in failed_items:
+                self._event_logger.log_rental_failed(
+                    member_id=member_id,
+                    product_id=item['product_id'],
+                    device_uuid=item['device_uuid'],
+                    reason=item['reason']
+                )
         
         # 7. 결과 반환
         if len(failed_items) == 0:

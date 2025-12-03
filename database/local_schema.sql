@@ -142,16 +142,36 @@ INSERT OR IGNORE INTO promotions (promo_id, name, promo_type, condition_count, r
 ('PROMO001', '충전 보너스', 'charge_bonus', 10, 1, 1);
 
 -- =============================
--- 7. MQTT 이벤트 로그
+-- 7. MQTT 이벤트 로그 (Raw - 7일 보관)
 -- =============================
 
--- MQTT 이벤트 로그 (디버깅/모니터링)
+-- MQTT 이벤트 로그 (디버깅/모니터링용, 7일 후 자동 삭제)
 CREATE TABLE IF NOT EXISTS mqtt_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id TEXT NOT NULL,
     event_type TEXT NOT NULL,
     payload TEXT,                    -- JSON 형식
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================
+-- 7-1. 비즈니스 이벤트 로그 (Sheets 동기화용)
+-- =============================
+
+-- 비즈니스 이벤트 로그 (영구 보관, Sheets 업로드)
+CREATE TABLE IF NOT EXISTS event_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,        -- rental_success, rental_failed, stock_low, device_offline 등
+    severity TEXT DEFAULT 'info',    -- info, warning, error
+    device_uuid TEXT,                -- 관련 기기 UUID
+    member_id TEXT,                  -- 관련 회원 ID
+    product_id TEXT,                 -- 관련 상품 ID
+    details TEXT,                    -- JSON 형식 상세 정보
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    synced_to_sheets BOOLEAN DEFAULT 0,
+    FOREIGN KEY (device_uuid) REFERENCES device_registry(device_uuid),
+    FOREIGN KEY (member_id) REFERENCES members(member_id),
+    FOREIGN KEY (product_id) REFERENCES products(product_id)
 );
 
 -- =============================
@@ -171,6 +191,11 @@ CREATE INDEX IF NOT EXISTS idx_mqtt_events_device ON mqtt_events(device_id);
 CREATE INDEX IF NOT EXISTS idx_mqtt_events_created ON mqtt_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_device_registry_mac ON device_registry(mac_address);
 CREATE INDEX IF NOT EXISTS idx_device_registry_product ON device_registry(product_id);
+CREATE INDEX IF NOT EXISTS idx_event_logs_type ON event_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_event_logs_created ON event_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_event_logs_sync ON event_logs(synced_to_sheets);
+CREATE INDEX IF NOT EXISTS idx_event_logs_device ON event_logs(device_uuid);
+CREATE INDEX IF NOT EXISTS idx_event_logs_severity ON event_logs(severity);
 
 -- =============================
 -- 9. 초기 데이터

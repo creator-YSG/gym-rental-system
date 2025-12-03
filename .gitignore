@@ -60,3 +60,4 @@ Thumbs.db
 *.temp
 
 .pio/
+config/credentials.json

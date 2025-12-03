@@ -368,6 +368,93 @@ class SheetsSync:
             traceback.print_exc()
             return 0
     
+    def upload_event_logs(self, local_cache, limit: int = 100) -> int:
+        """
+        비즈니스 이벤트 로그 업로드
+        
+        Args:
+            local_cache: LocalCache 인스턴스
+            limit: 최대 업로드 건수
+        
+        Returns:
+            업로드된 이벤트 수
+        """
+        try:
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            
+            # 동기화되지 않은 이벤트 조회
+            cursor.execute('''
+                SELECT id, event_type, severity, device_uuid, member_id, 
+                       product_id, details, created_at
+                FROM event_logs 
+                WHERE synced_to_sheets = 0 
+                ORDER BY created_at
+                LIMIT ?
+            ''', (limit,))
+            
+            events = cursor.fetchall()
+            
+            if not events:
+                return 0
+            
+            self._rate_limit()
+            
+            # 시트 가져오기 (없으면 생성)
+            try:
+                sheet = self.spreadsheet.worksheet('event_logs')
+            except:
+                # 시트 생성
+                sheet = self.spreadsheet.add_worksheet(title='event_logs', rows=1000, cols=10)
+                # 헤더 추가
+                headers = ['log_id', 'timestamp', 'event_type', 'severity', 
+                          'device_uuid', 'member_id', 'product_id', 'details']
+                sheet.append_row(headers)
+                # 헤더 서식
+                sheet.format('A1:H1', {
+                    'textFormat': {'bold': True},
+                    'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+                })
+            
+            # 데이터 변환
+            rows = []
+            event_ids = []
+            
+            for event in events:
+                event_id, event_type, severity, device_uuid, member_id, product_id, details, created_at = event
+                rows.append([
+                    event_id,
+                    created_at,
+                    event_type,
+                    severity,
+                    device_uuid or '',
+                    member_id or '',
+                    product_id or '',
+                    details or ''
+                ])
+                event_ids.append(event_id)
+            
+            # 시트에 추가
+            sheet.append_rows(rows)
+            
+            # 동기화 완료 표시
+            placeholders = ', '.join(['?' for _ in event_ids])
+            cursor.execute(f'''
+                UPDATE event_logs 
+                SET synced_to_sheets = 1 
+                WHERE id IN ({placeholders})
+            ''', event_ids)
+            conn.commit()
+            
+            print(f"[Sheets] 이벤트 로그 업로드 완료: {len(rows)}건")
+            return len(rows)
+            
+        except Exception as e:
+            print(f"[Sheets] 이벤트 로그 업로드 오류: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+    
     def upload_products(self, local_cache) -> int:
         """
         상품 정보 업로드 (SQLite → Google Sheets)
