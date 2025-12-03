@@ -163,8 +163,8 @@ const float DISPENSE_DIST_MM = 15.0;  // 토출 시 이동 거리
 const int   STEP_DELAY_US  = 500;
 
 // 방향 정의
-const int DIR_FORWARD = LOW;   // 정방향 (토출 방향)
-const int DIR_BACK    = HIGH;  // 역방향
+const int DIR_FORWARD = LOW;   // 정방향 (원점 복귀 방향, R)
+const int DIR_BACK    = HIGH;  // 역방향 (토출 방향, L)
 
 // 색상 정의 (16bit RGB565)
 uint16_t COLOR_MINT     = 0;
@@ -662,8 +662,8 @@ bool dispenseOne() {
   g_dispensing = true;
   showDispensingScreen();
   
-  // 토출 동작: 정방향으로 이동
-  move_mm(DISPENSE_DIST_MM, DIR_FORWARD);
+  // 토출 동작: 역방향(L)으로 이동
+  move_mm(DISPENSE_DIST_MM, DIR_BACK);
   
   // 긴급 정지가 발생했는지 체크
   if (g_emergencyStop) {
