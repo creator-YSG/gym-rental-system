@@ -109,6 +109,12 @@ def create_app(config_name='default'):
                 
                 app.sheets_sync = sheets_sync
                 app.sync_scheduler = sync_scheduler
+                
+                # MQTT 핸들러에 sheets_sync 연결 (새 상품 등록 시 즉시 동기화)
+                if mqtt_service:
+                    from app.services.mqtt_service import register_default_handlers
+                    register_default_handlers(mqtt_service, local_cache, sheets_sync)
+                    print("[App] MQTT 핸들러에 Sheets 동기화 연결")
             else:
                 print("[App] Google Sheets 연결 실패")
         else:

@@ -122,17 +122,13 @@ class SyncScheduler:
             print(f"[SyncScheduler] 업로드: 이벤트 {event_count}건, 대여 {rental_count}건")
     
     def _sync_device_status(self):
-        """기기 상태 + 상품 정보 업데이트"""
+        """기기 상태 업데이트"""
         if not self.sheets_sync:
             return
         
         # 기기 상태 업데이트
         self.sheets_sync.update_device_status(self.local_cache)
-        
-        # 상품 정보 업로드 (새 기기 연결 시 자동 생성된 상품 동기화)
-        product_count = self.sheets_sync.upload_products(self.local_cache)
-        if product_count > 0:
-            print(f"[SyncScheduler] 상품 정보 업로드: {product_count}개")
+        # 상품 동기화는 boot_complete 이벤트 시 즉시 처리됨
     
     def _sync_members(self):
         """회원 정보 다운로드"""

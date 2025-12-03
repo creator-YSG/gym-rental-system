@@ -410,13 +410,14 @@ def handle_mqtt_reconnected(device_uuid: str, payload: Dict):
 # 기본 핸들러 등록 유틸리티
 # =============================
 
-def register_default_handlers(mqtt_service: MQTTService, local_cache=None):
+def register_default_handlers(mqtt_service: MQTTService, local_cache=None, sheets_sync=None):
     """
     기본 이벤트 핸들러 등록
     
     Args:
         mqtt_service: MQTT 서비스 인스턴스
         local_cache: LocalCache 인스턴스 (선택, 재고 동기화용)
+        sheets_sync: SheetsSync 인스턴스 (선택, 상품 자동 동기화용)
     """
     # 정상 작동 이벤트
     mqtt_service.register_event_handler('boot_complete', handle_boot_complete)
@@ -475,6 +476,15 @@ def register_default_handlers(mqtt_service: MQTTService, local_cache=None):
             product_id = device_info.get('product_id', '')
             print(f"[Event] ✅ {device_uuid} 기기+상품 등록 완료")
             print(f"        상품ID: {product_id}, 상품명: {device_name or category}")
+            
+            # 새 상품 등록 시 즉시 Google Sheets 동기화
+            if sheets_sync and product_id:
+                try:
+                    count = sheets_sync.upload_products(local_cache)
+                    if count > 0:
+                        print(f"[Event] 📤 Google Sheets 상품 동기화: {count}개")
+                except Exception as e:
+                    print(f"[Event] Sheets 동기화 실패: {e}")
         
         def handle_heartbeat_with_cache(device_uuid: str, payload: Dict):
             """하트비트 시 상태 업데이트"""
