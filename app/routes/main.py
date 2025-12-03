@@ -1,5 +1,5 @@
 """
-메인 라우트 및 API 엔드포인트
+메인 라우트 및 API 엔드포인트 (금액권/구독권 기반)
 """
 from flask import Blueprint, render_template, jsonify, request
 from datetime import datetime, timedelta
@@ -25,7 +25,7 @@ _local_cache = None
 
 
 def get_local_cache():
-    """LocalCache 인스턴스 가져오기 (lazy 초기화)"""
+    """LocalCache 인스턴스 가져오기"""
     global _local_cache
     if _local_cache is None and LocalCache:
         try:
@@ -36,18 +36,21 @@ def get_local_cache():
 
 
 def get_rental_service():
-    """RentalService 인스턴스 가져오기 (lazy 초기화)"""
+    """RentalService 인스턴스 가져오기"""
     global _rental_service
     if _rental_service is None and RentalService:
         try:
             from flask import current_app
             _rental_service = RentalService(get_local_cache())
-            # 앱의 MQTT 서비스 주입 (중복 연결 방지)
             if hasattr(current_app, 'mqtt_service') and current_app.mqtt_service:
                 _rental_service.set_mqtt_service(current_app.mqtt_service)
-                print("[Routes] RentalService에 앱 MQTT 서비스 주입 완료")
+                print(f"[Routes] RentalService MQTT 연결됨")
+            else:
+                print(f"[Routes] RentalService MQTT 없음!")
         except Exception as e:
+            import traceback
             print(f"[Routes] RentalService 초기화 실패: {e}")
+            traceback.print_exc()
     return _rental_service
 
 
@@ -86,8 +89,18 @@ def api_auth_phone():
         {"phone": "01012345678"}
     
     Response:
-        {"success": true, "member": {...}} 또는
-        {"success": false, "message": "..."}
+        {
+            "success": true,
+            "member": {
+                "member_id": "A001",
+                "name": "홍길동",
+                "phone": "01012345678",
+                "status": "active",
+                "total_balance": 50000,           // 총 금액권 잔액
+                "active_vouchers_count": 2,       // 활성 금액권 수
+                "active_subscriptions_count": 1   // 활성 구독권 수
+            }
+        }
     """
     data = request.json
     phone = data.get('phone', '').replace('-', '').strip()
@@ -101,47 +114,35 @@ def api_auth_phone():
     local_cache = get_local_cache()
     
     if not local_cache:
-        return jsonify({'success': False, 'message': '시스템 초기화 중입니다. 잠시 후 다시 시도해주세요.'}), 503
+        return jsonify({'success': False, 'message': '시스템 초기화 중입니다.'}), 503
     
-    # 전화번호로 회원 조회
-    member = find_member_by_phone(local_cache, phone)
+    member = local_cache.get_member_by_phone(phone)
     
     if not member:
-        return jsonify({
-            'success': False, 
-            'message': '등록되지 않은 전화번호입니다.'
-        }), 404
+        return jsonify({'success': False, 'message': '등록되지 않은 전화번호입니다.'}), 404
     
     if member.get('status') != 'active':
-        return jsonify({
-            'success': False,
-            'message': '비활성화된 회원입니다. 관리자에게 문의해주세요.'
-        }), 403
+        return jsonify({'success': False, 'message': '비활성화된 회원입니다.'}), 403
+    
+    member_id = member['member_id']
+    
+    # 금액권/구독권 요약 정보
+    total_balance = local_cache.get_total_balance(member_id)
+    active_vouchers = local_cache.get_active_vouchers(member_id)
+    active_subscriptions = local_cache.get_active_subscriptions(member_id)
     
     return jsonify({
         'success': True,
         'member': {
-            'member_id': member['member_id'],
+            'member_id': member_id,
             'name': member['name'],
             'phone': member.get('phone', ''),
-            'remaining_count': member['remaining_count'],
             'status': member['status'],
+            'total_balance': total_balance,
+            'active_vouchers_count': len(active_vouchers),
+            'active_subscriptions_count': len(active_subscriptions),
         }
     })
-
-
-def find_member_by_phone(local_cache, phone):
-    """전화번호로 회원 검색"""
-    # 전화번호 정규화 (하이픈 제거)
-    normalized_phone = phone.replace('-', '').strip()
-    
-    # 모든 회원 순회하며 전화번호 매칭
-    for member_id, member in local_cache._members_cache.items():
-        member_phone = member.get('phone', '').replace('-', '').strip()
-        if member_phone == normalized_phone:
-            return member
-    
-    return None
 
 
 # ========================================
@@ -151,7 +152,7 @@ def find_member_by_phone(local_cache, phone):
 @main_bp.route('/api/products', methods=['GET'])
 def api_get_products():
     """
-    상품 목록 조회 (기기 상태 포함)
+    상품 목록 조회 (기기 상태 + 가격 포함)
     
     Response:
         {
@@ -161,6 +162,7 @@ def api_get_products():
                     "name": "운동복 상의 105",
                     "category": "top",
                     "size": "105",
+                    "price": 1000,
                     "stock": 30,
                     "device_uuid": "FBOX-...",
                     "connected": true,
@@ -180,26 +182,23 @@ def api_get_products():
     
     for product in products:
         device_uuid = product.get('device_uuid')
-        
-        # 기기 연결 상태 확인
         connected = device_uuid is not None
         online = False
         stock = product.get('stock', 0)
         
         if device_uuid:
-            # device_cache에서 실시간 상태 조회
             device = local_cache.get_device(device_uuid)
             if device:
-                # heartbeat가 2분 이내면 online
                 last_heartbeat = device.get('last_heartbeat')
                 if last_heartbeat:
                     try:
                         hb_time = datetime.fromisoformat(last_heartbeat)
+                        if hb_time.tzinfo:
+                            hb_time = hb_time.replace(tzinfo=None)
                         online = (datetime.now() - hb_time) < timedelta(minutes=2)
                     except:
                         pass
                 
-                # 실시간 재고로 업데이트
                 if device.get('stock') is not None:
                     stock = device['stock']
         
@@ -208,6 +207,7 @@ def api_get_products():
             'name': product['name'],
             'category': product['category'],
             'size': product.get('size', ''),
+            'price': product.get('price', 1000),
             'stock': stock,
             'device_uuid': device_uuid or '',
             'connected': connected,
@@ -215,24 +215,113 @@ def api_get_products():
             'display_order': product.get('display_order', 0),
         })
     
-    # display_order로 정렬
     result.sort(key=lambda x: x['display_order'])
     
     return jsonify({'products': result})
 
 
 # ========================================
+# 결제 수단 API
+# ========================================
+
+@main_bp.route('/api/payment-methods/<member_id>', methods=['GET'])
+def api_get_payment_methods(member_id):
+    """
+    사용 가능한 결제 수단 조회
+    
+    Query params:
+        category: 카테고리 (구독권 잔여 횟수 확인용)
+    
+    Response:
+        {
+            "subscriptions": [
+                {
+                    "subscription_id": 1,
+                    "product_name": "3개월 기본 이용권",
+                    "valid_until": "2025-03-01",
+                    "remaining_today": 1,           // category 지정 시
+                    "remaining_by_category": {...}  // category 미지정 시
+                },
+                ...
+            ],
+            "vouchers": [
+                {
+                    "voucher_id": 1,
+                    "product_name": "10만원 금액권",
+                    "remaining_amount": 45000,
+                    "valid_until": "2025-12-01"
+                },
+                ...
+            ],
+            "total_balance": 45000
+        }
+    """
+    category = request.args.get('category')
+    
+    rental_service = get_rental_service()
+    if not rental_service:
+        return jsonify({'subscriptions': [], 'vouchers': [], 'total_balance': 0})
+    
+    result = rental_service.get_available_payment_methods(member_id, category)
+    return jsonify(result)
+
+
+@main_bp.route('/api/member/<member_id>/cards', methods=['GET'])
+def api_get_member_cards(member_id):
+    """
+    회원의 모든 카드 조회 (마이페이지용)
+    
+    Response:
+        {
+            "subscriptions": [...],  // 모든 구독권 (만료 포함)
+            "vouchers": [...]        // 모든 금액권 (만료/소진 포함)
+        }
+    """
+    rental_service = get_rental_service()
+    if not rental_service:
+        return jsonify({'subscriptions': [], 'vouchers': []})
+    
+    result = rental_service.get_member_cards(member_id)
+    return jsonify(result)
+
+
+# ========================================
 # 대여 API
 # ========================================
 
-@main_bp.route('/api/rental/process', methods=['POST'])
-def api_process_rental():
+@main_bp.route('/api/rental/calculate', methods=['POST'])
+def api_calculate_rental():
     """
-    대여 처리
+    대여 비용 계산
+    
+    Request:
+        {
+            "items": [{"product_id": "P-TOP-105", "quantity": 1}, ...]
+        }
+    
+    Response:
+        {"total_amount": 2000}
+    """
+    data = request.json
+    items = data.get('items', [])
+    
+    rental_service = get_rental_service()
+    if not rental_service:
+        return jsonify({'total_amount': 0})
+    
+    total = rental_service.calculate_rental_cost(items)
+    return jsonify({'total_amount': total})
+
+
+@main_bp.route('/api/rental/subscription', methods=['POST'])
+def api_rental_with_subscription():
+    """
+    구독권으로 대여 처리
     
     Request:
         {
             "member_id": "A001",
+            "subscription_id": 1,
             "items": [
                 {"product_id": "P-TOP-105", "quantity": 1, "device_uuid": "FBOX-..."},
                 ...
@@ -242,42 +331,102 @@ def api_process_rental():
     Response:
         {
             "success": true,
-            "remaining_count": 7,
-            "message": "대여가 완료되었습니다."
+            "message": "대여 완료",
+            "payment_type": "subscription",
+            "dispense_results": [...]
+        }
+    """
+    data = request.json
+    member_id = data.get('member_id')
+    subscription_id = data.get('subscription_id')
+    items = data.get('items', [])
+    
+    if not member_id:
+        return jsonify({'success': False, 'message': '회원 정보가 없습니다.'}), 400
+    if not subscription_id:
+        return jsonify({'success': False, 'message': '구독권을 선택해주세요.'}), 400
+    if not items:
+        return jsonify({'success': False, 'message': '선택된 상품이 없습니다.'}), 400
+    
+    rental_service = get_rental_service()
+    if not rental_service:
+        return jsonify({'success': False, 'message': '시스템 초기화 중입니다.'}), 503
+    
+    try:
+        result = rental_service.process_rental_with_subscription(member_id, items, subscription_id)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({'success': False, 'message': str(e)}), 400
+    except Exception as e:
+        print(f"[API] 구독권 대여 오류: {e}")
+        return jsonify({'success': False, 'message': '대여 처리 중 오류가 발생했습니다.'}), 500
+
+
+@main_bp.route('/api/rental/voucher', methods=['POST'])
+def api_rental_with_voucher():
+    """
+    금액권으로 대여 처리 (쪼개기 지원)
+    
+    Request:
+        {
+            "member_id": "A001",
+            "items": [
+                {"product_id": "P-TOP-105", "quantity": 1, "device_uuid": "FBOX-..."},
+                ...
+            ],
+            "voucher_selections": [
+                {"voucher_id": 1, "amount": 500},
+                {"voucher_id": 2, "amount": 500}
+            ]
+        }
+    
+    Response:
+        {
+            "success": true,
+            "message": "대여 완료 (1000원 차감)",
+            "payment_type": "voucher",
+            "total_amount": 1000,
+            "dispense_results": [...]
         }
     """
     data = request.json
     member_id = data.get('member_id')
     items = data.get('items', [])
+    voucher_selections = data.get('voucher_selections', [])
     
     if not member_id:
         return jsonify({'success': False, 'message': '회원 정보가 없습니다.'}), 400
-    
     if not items:
         return jsonify({'success': False, 'message': '선택된 상품이 없습니다.'}), 400
+    if not voucher_selections:
+        return jsonify({'success': False, 'message': '금액권을 선택해주세요.'}), 400
     
     rental_service = get_rental_service()
-    
     if not rental_service:
-        return jsonify({'success': False, 'message': '시스템 초기화 중입니다. 잠시 후 다시 시도해주세요.'}), 503
+        return jsonify({'success': False, 'message': '시스템 초기화 중입니다.'}), 503
     
     try:
-        result = rental_service.process_rental(member_id, items)
+        print(f"[API] 금액권 대여 요청: member={member_id}, items={items}, vouchers={voucher_selections}")
+        result = rental_service.process_rental_with_vouchers(member_id, items, voucher_selections)
+        print(f"[API] 금액권 대여 결과: {result}")
         return jsonify(result)
     except ValueError as e:
+        print(f"[API] 금액권 대여 ValueError: {e}")
         return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
-        print(f"[API] 대여 처리 오류: {e}")
+        import traceback
+        print(f"[API] 금액권 대여 오류: {e}")
+        traceback.print_exc()
         return jsonify({'success': False, 'message': '대여 처리 중 오류가 발생했습니다.'}), 500
 
 
 # ========================================
-# 재고 API (기존)
+# 재고 API
 # ========================================
 
 @main_bp.route('/api/inventory', methods=['GET'])
 def api_get_inventory():
-    """재고 현황 조회 (기존 API 유지)"""
+    """재고 현황 조회"""
     rental_service = get_rental_service()
     if not rental_service:
         return jsonify({'categories': {}, 'total': {'total': 0, 'available': 0}})

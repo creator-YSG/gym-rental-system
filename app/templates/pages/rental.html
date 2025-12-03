@@ -5,14 +5,226 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>상품 선택 - 운동복 대여</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* 마이페이지 슬라이드 패널 */
+        .mypage-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+        .mypage-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .mypage-panel {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            max-width: 90vw;
+            height: 100%;
+            background: #1a1a2e;
+            transition: right 0.3s ease;
+            z-index: 1001;
+            display: flex;
+            flex-direction: column;
+        }
+        .mypage-overlay.show .mypage-panel {
+            right: 0;
+        }
+        .mypage-header {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid #333;
+        }
+        .mypage-back {
+            background: none;
+            border: none;
+            color: #fff;
+            font-size: 24px;
+            cursor: pointer;
+            margin-right: 15px;
+        }
+        .mypage-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #fff;
+        }
+        .mypage-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        .mypage-section {
+            margin-bottom: 25px;
+        }
+        .mypage-section-title {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-item {
+            background: #252542;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 10px;
+        }
+        .card-item.active { border-left: 4px solid #4CAF50; }
+        .card-item.pending { border-left: 4px solid #FF9800; opacity: 0.8; }
+        .card-item.exhausted { border-left: 4px solid #666; opacity: 0.6; }
+        .card-item.expired { border-left: 4px solid #f44336; opacity: 0.5; }
+        .card-status {
+            font-size: 12px;
+            margin-bottom: 8px;
+        }
+        .card-status.active { color: #4CAF50; }
+        .card-status.pending { color: #FF9800; }
+        .card-status.exhausted { color: #666; }
+        .card-status.expired { color: #f44336; }
+        .card-name {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        .card-info {
+            font-size: 13px;
+            color: #aaa;
+            line-height: 1.5;
+        }
+        .card-balance {
+            font-size: 18px;
+            font-weight: 700;
+            color: #4fd1c5;
+            margin-top: 5px;
+        }
+
+        /* 결제 선택 모달 */
+        .payment-modal .modal-content {
+            max-width: 500px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .payment-section {
+            margin-bottom: 20px;
+        }
+        .payment-section-title {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+        .payment-option {
+            background: #252542;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .payment-option:hover {
+            border-color: #4fd1c5;
+        }
+        .payment-option.selected {
+            border-color: #4fd1c5;
+            background: #2d2d4a;
+        }
+        .payment-option.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .payment-option-name {
+            font-size: 15px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 5px;
+        }
+        .payment-option-info {
+            font-size: 13px;
+            color: #aaa;
+        }
+        .payment-option-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #4fd1c5;
+            margin-top: 5px;
+        }
+        .payment-total {
+            background: #1e1e36;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        .payment-total-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .payment-total-label {
+            color: #888;
+        }
+        .payment-total-value {
+            font-weight: 600;
+            color: #fff;
+        }
+        .payment-total-value.highlight {
+            color: #4fd1c5;
+            font-size: 18px;
+        }
+
+        /* 멤버 헤더 수정 */
+        .member-info-extended {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .member-balance {
+            font-size: 14px;
+            color: #4fd1c5;
+        }
+        .mypage-btn {
+            background: #3d3d5c;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .mypage-btn:hover {
+            background: #4d4d6c;
+        }
+
+        /* 상품 가격 표시 */
+        .product-price {
+            font-size: 14px;
+            color: #4fd1c5;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+    </style>
 </head>
 <body>
     <div class="rental-container">
         <!-- 상단 헤더 -->
         <div class="rental-header">
-            <div class="member-info">
-                <div class="member-name" id="memberName">회원님</div>
-                <div class="member-count" id="memberCount">잔여 <strong>0</strong>회</div>
+            <div class="member-info member-info-extended">
+                <div>
+                    <div class="member-name" id="memberName">회원님</div>
+                    <div class="member-balance" id="memberBalance">잔액: 0원</div>
+                </div>
+                <button class="mypage-btn" id="mypageBtn">내 카드</button>
             </div>
             <button class="logout-btn" id="logoutBtn">로그아웃</button>
         </div>
@@ -33,19 +245,19 @@
         <div class="cart-area">
             <div class="cart-header">
                 <span class="cart-title">장바구니</span>
-                <span class="cart-total" id="cartTotal">총 <strong>0</strong>회 차감</span>
+                <span class="cart-total" id="cartTotal">총 <strong>0</strong>원</span>
             </div>
             <div class="cart-items" id="cartItems">
                 <div class="cart-empty">상품을 선택해주세요</div>
             </div>
-            <button class="checkout-btn" id="checkoutBtn" disabled>대여하기</button>
+            <button class="checkout-btn" id="checkoutBtn" disabled>결제 수단 선택</button>
         </div>
 
         <!-- 수량 선택 모달 -->
         <div class="modal-overlay" id="quantityModal">
             <div class="modal-content">
                 <div class="modal-title" id="modalProductName">상품명</div>
-                <div class="modal-subtitle">수량을 선택해주세요</div>
+                <div class="modal-subtitle" id="modalProductPrice">1,000원</div>
                 
                 <div class="quantity-selector">
                     <button class="qty-btn" id="qtyMinus" onclick="changeQuantity(-1)">−</button>
@@ -56,6 +268,59 @@
                 <div class="modal-buttons">
                     <button class="modal-btn cancel" onclick="closeQuantityModal()">취소</button>
                     <button class="modal-btn confirm" onclick="confirmQuantity()">확인</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 결제 수단 선택 모달 -->
+        <div class="modal-overlay payment-modal" id="paymentModal">
+            <div class="modal-content">
+                <div class="modal-title">결제 수단 선택</div>
+                
+                <!-- 구독권 섹션 -->
+                <div class="payment-section" id="subscriptionSection">
+                    <div class="payment-section-title">📋 구독권</div>
+                    <div id="subscriptionOptions">
+                        <!-- 동적으로 생성됨 -->
+                    </div>
+                </div>
+                
+                <!-- 금액권 섹션 -->
+                <div class="payment-section" id="voucherSection">
+                    <div class="payment-section-title">💳 금액권</div>
+                    <div id="voucherOptions">
+                        <!-- 동적으로 생성됨 -->
+                    </div>
+                </div>
+                
+                <!-- 총액 표시 -->
+                <div class="payment-total">
+                    <div class="payment-total-row">
+                        <span class="payment-total-label">총 결제 금액</span>
+                        <span class="payment-total-value" id="paymentTotalAmount">0원</span>
+                    </div>
+                    <div class="payment-total-row">
+                        <span class="payment-total-label">선택된 금액</span>
+                        <span class="payment-total-value highlight" id="paymentSelectedAmount">0원</span>
+                    </div>
+                </div>
+                
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closePaymentModal()">취소</button>
+                    <button class="modal-btn confirm" id="confirmPaymentBtn" onclick="confirmPayment()" disabled>결제하기</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 마이페이지 슬라이드 패널 -->
+        <div class="mypage-overlay" id="mypageOverlay">
+            <div class="mypage-panel">
+                <div class="mypage-header">
+                    <button class="mypage-back" onclick="closeMypage()">←</button>
+                    <span class="mypage-title">내 카드</span>
+                </div>
+                <div class="mypage-content" id="mypageContent">
+                    <!-- 동적으로 생성됨 -->
                 </div>
             </div>
         </div>

@@ -1,9 +1,9 @@
 """
-Google Sheets 동기화 서비스 (횟수 기반)
+Google Sheets 동기화 서비스 (금액권/구독권 기반)
 
 Google Sheets ↔ SQLite 간 데이터 동기화
-- 다운로드: 회원 정보, 상품 목록
-- 업로드: 대여 이력, 횟수 변동, 기기 상태
+- 다운로드: 회원 정보, 상품 목록, 금액권/구독권 상품, 회원 금액권/구독권
+- 업로드: 대여 이력, 금액권 거래, 기기 상태
 """
 
 import gspread
@@ -11,6 +11,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 from typing import List, Dict, Optional
 import time
+import json
 
 
 class SheetsSync:
@@ -37,12 +38,7 @@ class SheetsSync:
         print(f"[Sheets] 초기화: {spreadsheet_name}")
     
     def connect(self) -> bool:
-        """
-        Google Sheets API 연결
-        
-        Returns:
-            성공 여부
-        """
+        """Google Sheets API 연결"""
         try:
             scope = [
                 'https://spreadsheets.google.com/feeds',
@@ -64,7 +60,7 @@ class SheetsSync:
             return False
     
     def _rate_limit(self):
-        """API 호출 제한 관리 (분당 60회 제한)"""
+        """API 호출 제한 관리"""
         now = time.time()
         elapsed = now - self.last_api_call
         
@@ -73,17 +69,25 @@ class SheetsSync:
         
         self.last_api_call = time.time()
     
+    def _get_or_create_sheet(self, sheet_name: str, headers: List[str]) -> gspread.Worksheet:
+        """시트 가져오기 (없으면 생성)"""
+        try:
+            sheet = self.spreadsheet.worksheet(sheet_name)
+        except gspread.WorksheetNotFound:
+            sheet = self.spreadsheet.add_worksheet(title=sheet_name, rows=1000, cols=len(headers))
+            sheet.append_row(headers)
+            sheet.format(f'A1:{chr(64 + len(headers))}1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+        return sheet
+    
     # =============================
     # 다운로드 (Sheets → SQLite)
     # =============================
     
     def download_config(self) -> dict:
-        """
-        설정 정보 다운로드
-        
-        Returns:
-            설정 딕셔너리 {key: value}
-        """
+        """설정 정보 다운로드"""
         try:
             self._rate_limit()
             sheet = self.spreadsheet.worksheet('config')
@@ -94,7 +98,6 @@ class SheetsSync:
                 key = record.get('key')
                 value = record.get('value')
                 if key:
-                    # 숫자 변환 시도
                     try:
                         if '.' in str(value):
                             config[key] = float(value)
@@ -111,15 +114,7 @@ class SheetsSync:
             return {}
     
     def download_members(self, local_cache) -> int:
-        """
-        회원 정보 다운로드
-        
-        Args:
-            local_cache: LocalCache 인스턴스
-        
-        Returns:
-            동기화된 회원 수
-        """
+        """회원 정보 다운로드 (금액권/구독권 기반 - 잔여 횟수 없음)"""
         try:
             self._rate_limit()
             sheet = self.spreadsheet.worksheet('members')
@@ -130,29 +125,26 @@ class SheetsSync:
             cursor = conn.cursor()
             
             for record in records:
-                # phone 번호 정규화 (하이픈 제거)
                 phone = record.get('phone', '')
                 if phone:
-                    phone = phone.replace('-', '').replace(' ', '')
+                    phone = str(phone).replace('-', '').replace(' ', '')
                 
                 cursor.execute('''
                     INSERT OR REPLACE INTO members 
-                    (member_id, name, phone, remaining_count, total_charged, total_used, status, synced_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (member_id, name, phone, status, synced_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                 ''', (
                     record.get('member_id'),
                     record.get('name'),
                     phone,
-                    record.get('remaining_count', 0),
-                    record.get('total_charged', 0),
-                    record.get('total_used', 0),
                     record.get('status', 'active'),
+                    datetime.now().isoformat(),
                     datetime.now().isoformat()
                 ))
                 count += 1
             
             conn.commit()
-            local_cache.reload_members()  # 메모리 캐시 재로드
+            local_cache.reload_members()
             
             print(f"[Sheets] 회원 정보 다운로드 완료: {count}명")
             return count
@@ -162,16 +154,7 @@ class SheetsSync:
             return 0
     
     def download_products(self, local_cache) -> int:
-        """
-        상품 정보 다운로드 (Google Sheets → SQLite)
-        주의: ESP32에서 자동 생성된 상품과 충돌하지 않도록 device_uuid가 있는 행만 업데이트
-        
-        Args:
-            local_cache: LocalCache 인스턴스
-        
-        Returns:
-            동기화된 상품 수
-        """
+        """상품 정보 다운로드 (가격 포함)"""
         try:
             self._rate_limit()
             sheet = self.spreadsheet.worksheet('products')
@@ -184,20 +167,26 @@ class SheetsSync:
             for record in records:
                 device_uuid = record.get('device_uuid', '')
                 if not device_uuid:
-                    # device_uuid가 없으면 ESP32 연결 안된 상품 - 스킵
                     continue
-                    
+                
+                price = record.get('price', 1000)
+                try:
+                    price = int(price)
+                except (ValueError, TypeError):
+                    price = 1000
+                
                 cursor.execute('''
                     INSERT OR REPLACE INTO products 
-                    (product_id, gym_id, category, size, name, device_uuid, 
+                    (product_id, gym_id, category, size, name, price, device_uuid, 
                      stock, enabled, display_order, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     record.get('product_id'),
                     record.get('gym_id', 'GYM001'),
                     record.get('category'),
                     record.get('size', ''),
                     record.get('name'),
+                    price,
                     device_uuid,
                     record.get('stock', 0),
                     1 if record.get('enabled') == 'TRUE' else 0,
@@ -207,7 +196,7 @@ class SheetsSync:
                 count += 1
             
             conn.commit()
-            local_cache.reload_products()  # 메모리 캐시 재로드
+            local_cache.reload_products()
             
             print(f"[Sheets] 상품 정보 다운로드 완료: {count}개")
             return count
@@ -216,31 +205,195 @@ class SheetsSync:
             print(f"[Sheets] 상품 다운로드 오류: {e}")
             return 0
     
+    def download_voucher_products(self, local_cache) -> int:
+        """금액권 상품 다운로드"""
+        try:
+            self._rate_limit()
+            sheet = self.spreadsheet.worksheet('voucher_products')
+            records = sheet.get_all_records()
+            
+            count = 0
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            
+            for record in records:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO voucher_products 
+                    (product_id, name, price, charge_amount, validity_days,
+                     bonus_product_id, is_bonus, enabled, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    record.get('product_id'),
+                    record.get('name'),
+                    int(record.get('price', 0)),
+                    int(record.get('charge_amount', 0)),
+                    int(record.get('validity_days', 365)),
+                    record.get('bonus_product_id') or None,
+                    1 if record.get('is_bonus') in ('TRUE', True, 1) else 0,
+                    1 if record.get('enabled') in ('TRUE', True, 1) else 0,
+                    datetime.now().isoformat()
+                ))
+                count += 1
+            
+            conn.commit()
+            local_cache.reload_voucher_products()
+            
+            print(f"[Sheets] 금액권 상품 다운로드 완료: {count}개")
+            return count
+            
+        except Exception as e:
+            print(f"[Sheets] 금액권 상품 다운로드 오류: {e}")
+            return 0
+    
+    def download_subscription_products(self, local_cache) -> int:
+        """구독 상품 다운로드"""
+        try:
+            self._rate_limit()
+            sheet = self.spreadsheet.worksheet('subscription_products')
+            records = sheet.get_all_records()
+            
+            count = 0
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            
+            for record in records:
+                daily_limits = record.get('daily_limits', '{}')
+                if isinstance(daily_limits, str):
+                    try:
+                        json.loads(daily_limits)
+                    except:
+                        daily_limits = '{}'
+                else:
+                    daily_limits = json.dumps(daily_limits)
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO subscription_products 
+                    (product_id, name, price, validity_days, daily_limits, enabled, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    record.get('product_id'),
+                    record.get('name'),
+                    int(record.get('price', 0)),
+                    int(record.get('validity_days', 30)),
+                    daily_limits,
+                    1 if record.get('enabled') in ('TRUE', True, 1) else 0,
+                    datetime.now().isoformat()
+                ))
+                count += 1
+            
+            conn.commit()
+            local_cache.reload_subscription_products()
+            
+            print(f"[Sheets] 구독 상품 다운로드 완료: {count}개")
+            return count
+            
+        except Exception as e:
+            print(f"[Sheets] 구독 상품 다운로드 오류: {e}")
+            return 0
+    
+    def download_member_vouchers(self, local_cache) -> int:
+        """회원 금액권 다운로드"""
+        try:
+            self._rate_limit()
+            sheet = self.spreadsheet.worksheet('member_vouchers')
+            records = sheet.get_all_records()
+            
+            count = 0
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            
+            for record in records:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO member_vouchers 
+                    (voucher_id, member_id, voucher_product_id, original_amount, remaining_amount,
+                     parent_voucher_id, valid_from, valid_until, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    int(record.get('voucher_id')),
+                    record.get('member_id'),
+                    record.get('voucher_product_id'),
+                    int(record.get('original_amount', 0)),
+                    int(record.get('remaining_amount', 0)),
+                    int(record.get('parent_voucher_id')) if record.get('parent_voucher_id') else None,
+                    record.get('valid_from') or None,
+                    record.get('valid_until') or None,
+                    record.get('status', 'active'),
+                    datetime.now().isoformat()
+                ))
+                count += 1
+            
+            conn.commit()
+            print(f"[Sheets] 회원 금액권 다운로드 완료: {count}개")
+            return count
+            
+        except Exception as e:
+            print(f"[Sheets] 회원 금액권 다운로드 오류: {e}")
+            return 0
+    
+    def download_member_subscriptions(self, local_cache) -> int:
+        """회원 구독권 다운로드"""
+        try:
+            self._rate_limit()
+            sheet = self.spreadsheet.worksheet('member_subscriptions')
+            records = sheet.get_all_records()
+            
+            count = 0
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            
+            for record in records:
+                daily_limits = record.get('daily_limits', '{}')
+                if isinstance(daily_limits, str):
+                    try:
+                        json.loads(daily_limits)
+                    except:
+                        daily_limits = '{}'
+                else:
+                    daily_limits = json.dumps(daily_limits)
+                
+                cursor.execute('''
+                    INSERT OR REPLACE INTO member_subscriptions 
+                    (subscription_id, member_id, subscription_product_id, 
+                     valid_from, valid_until, daily_limits, status, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    int(record.get('subscription_id')),
+                    record.get('member_id'),
+                    record.get('subscription_product_id'),
+                    record.get('valid_from'),
+                    record.get('valid_until'),
+                    daily_limits,
+                    record.get('status', 'active'),
+                    datetime.now().isoformat()
+                ))
+                count += 1
+            
+            conn.commit()
+            print(f"[Sheets] 회원 구독권 다운로드 완료: {count}개")
+            return count
+            
+        except Exception as e:
+            print(f"[Sheets] 회원 구독권 다운로드 오류: {e}")
+            return 0
+    
     # =============================
     # 업로드 (SQLite → Sheets)
     # =============================
     
     def upload_rentals(self, local_cache) -> int:
-        """
-        대여 이력 업로드
-        
-        Args:
-            local_cache: LocalCache 인스턴스
-        
-        Returns:
-            업로드된 대여 수
-        """
+        """대여 이력 업로드 (금액권/구독권 기반)"""
         try:
-            # 동기화되지 않은 대여 로그 조회
             rentals = local_cache.get_unsynced_rentals()
             
             if not rentals:
                 return 0
             
             self._rate_limit()
-            sheet = self.spreadsheet.worksheet('rental_history')
             
-            # 한 번에 추가 (배치)
+            headers = ['rental_id', 'member_id', 'locker_number', 'product_id', 'product_name',
+                      'device_uuid', 'quantity', 'payment_type', 'subscription_id', 'amount', 'created_at']
+            sheet = self._get_or_create_sheet('rental_history', headers)
+            
             rows = []
             rental_ids = []
             
@@ -250,19 +403,17 @@ class SheetsSync:
                     rental['member_id'],
                     rental.get('locker_number', ''),
                     rental['product_id'],
-                    '',  # product_name (조회 필요 시)
-                    rental.get('device_uuid', ''),  # device_uuid로 변경
-                    rental['quantity'],       # 대여 수량 = 차감 횟수
-                    rental['count_before'],   # 대여 전 잔여 횟수
-                    rental['count_after'],    # 대여 후 잔여 횟수
+                    rental.get('product_name', ''),
+                    rental.get('device_uuid', ''),
+                    rental['quantity'],
+                    rental['payment_type'],
+                    rental.get('subscription_id', ''),
+                    rental.get('amount', 0),
                     rental['created_at']
                 ])
                 rental_ids.append(rental['id'])
             
-            # 시트에 추가
             sheet.append_rows(rows)
-            
-            # 동기화 완료 표시
             local_cache.mark_rentals_synced(rental_ids)
             
             print(f"[Sheets] 대여 이력 업로드 완료: {len(rows)}건")
@@ -272,71 +423,154 @@ class SheetsSync:
             print(f"[Sheets] 대여 업로드 오류: {e}")
             return 0
     
-    def upload_usage_logs(self, local_cache, limit: int = 100) -> int:
-        """
-        횟수 변동 이력 업로드
-        
-        Args:
-            local_cache: LocalCache 인스턴스
-            limit: 최대 업로드 건수
-        
-        Returns:
-            업로드된 로그 수
-        """
+    def upload_voucher_transactions(self, local_cache) -> int:
+        """금액권 거래 내역 업로드"""
         try:
-            conn = local_cache.conn
-            cursor = conn.cursor()
+            transactions = local_cache.get_unsynced_voucher_transactions()
             
-            # 아직 업로드되지 않은 로그 조회
-            # (간단히 최근 limit 건만 업로드, 실제로는 synced 플래그 추가 필요)
-            cursor.execute(f'''
-                SELECT * FROM usage_logs 
-                ORDER BY created_at DESC 
-                LIMIT {limit}
-            ''')
-            
-            logs = [dict(row) for row in cursor.fetchall()]
-            
-            if not logs:
+            if not transactions:
                 return 0
             
             self._rate_limit()
-            sheet = self.spreadsheet.worksheet('usage_history')
+            
+            headers = ['id', 'voucher_id', 'member_id', 'amount', 'balance_before',
+                      'balance_after', 'transaction_type', 'rental_log_id', 'created_at']
+            sheet = self._get_or_create_sheet('voucher_transactions', headers)
             
             rows = []
-            for log in logs:
+            transaction_ids = []
+            
+            for tx in transactions:
                 rows.append([
-                    log['id'],
-                    log['member_id'],
-                    log['amount'],
-                    log['count_before'],
-                    log['count_after'],
-                    log['type'],
-                    log.get('description', ''),
-                    log['created_at']
+                    tx['id'],
+                    tx['voucher_id'],
+                    tx['member_id'],
+                    tx['amount'],
+                    tx['balance_before'],
+                    tx['balance_after'],
+                    tx['transaction_type'],
+                    tx.get('rental_log_id', ''),
+                    tx['created_at']
                 ])
+                transaction_ids.append(tx['id'])
             
             sheet.append_rows(rows)
+            local_cache.mark_voucher_transactions_synced(transaction_ids)
             
-            print(f"[Sheets] 횟수 변동 이력 업로드 완료: {len(rows)}건")
+            print(f"[Sheets] 금액권 거래 업로드 완료: {len(rows)}건")
             return len(rows)
             
         except Exception as e:
-            print(f"[Sheets] 횟수 이력 업로드 오류: {e}")
+            print(f"[Sheets] 금액권 거래 업로드 오류: {e}")
+            return 0
+    
+    def upload_member_vouchers(self, local_cache) -> int:
+        """회원 금액권 전체 업로드 (상태 동기화)"""
+        try:
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT voucher_id, member_id, voucher_product_id, original_amount, remaining_amount,
+                       parent_voucher_id, valid_from, valid_until, status, created_at, updated_at
+                FROM member_vouchers
+                ORDER BY member_id, created_at
+            ''')
+            vouchers = cursor.fetchall()
+            
+            if not vouchers:
+                return 0
+            
+            self._rate_limit()
+            
+            headers = ['voucher_id', 'member_id', 'voucher_product_id', 'original_amount', 'remaining_amount',
+                      'parent_voucher_id', 'valid_from', 'valid_until', 'status', 'created_at', 'updated_at']
+            sheet = self._get_or_create_sheet('member_vouchers', headers)
+            
+            sheet.clear()
+            rows = [headers]
+            
+            for v in vouchers:
+                rows.append([
+                    v[0],  # voucher_id
+                    v[1],  # member_id
+                    v[2],  # voucher_product_id
+                    v[3],  # original_amount
+                    v[4],  # remaining_amount
+                    v[5] or '',  # parent_voucher_id
+                    v[6] or '',  # valid_from
+                    v[7] or '',  # valid_until
+                    v[8],  # status
+                    v[9] or '',  # created_at
+                    v[10] or ''  # updated_at
+                ])
+            
+            sheet.update('A1', rows)
+            sheet.format(f'A1:{chr(64 + len(headers))}1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+            
+            print(f"[Sheets] 회원 금액권 업로드 완료: {len(vouchers)}개")
+            return len(vouchers)
+            
+        except Exception as e:
+            print(f"[Sheets] 회원 금액권 업로드 오류: {e}")
+            return 0
+    
+    def upload_member_subscriptions(self, local_cache) -> int:
+        """회원 구독권 전체 업로드"""
+        try:
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT subscription_id, member_id, subscription_product_id,
+                       valid_from, valid_until, daily_limits, status, created_at, updated_at
+                FROM member_subscriptions
+                ORDER BY member_id, created_at
+            ''')
+            subscriptions = cursor.fetchall()
+            
+            if not subscriptions:
+                return 0
+            
+            self._rate_limit()
+            
+            headers = ['subscription_id', 'member_id', 'subscription_product_id',
+                      'valid_from', 'valid_until', 'daily_limits', 'status', 'created_at', 'updated_at']
+            sheet = self._get_or_create_sheet('member_subscriptions', headers)
+            
+            sheet.clear()
+            rows = [headers]
+            
+            for s in subscriptions:
+                rows.append([
+                    s[0],  # subscription_id
+                    s[1],  # member_id
+                    s[2],  # subscription_product_id
+                    s[3] or '',  # valid_from
+                    s[4] or '',  # valid_until
+                    s[5],  # daily_limits
+                    s[6],  # status
+                    s[7] or '',  # created_at
+                    s[8] or ''  # updated_at
+                ])
+            
+            sheet.update('A1', rows)
+            sheet.format(f'A1:{chr(64 + len(headers))}1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+            
+            print(f"[Sheets] 회원 구독권 업로드 완료: {len(subscriptions)}개")
+            return len(subscriptions)
+            
+        except Exception as e:
+            print(f"[Sheets] 회원 구독권 업로드 오류: {e}")
             return 0
     
     def update_device_status(self, local_cache) -> int:
-        """
-        기기 상태 업데이트 (device_uuid 기반)
-        
-        Args:
-            local_cache: LocalCache 인스턴스
-        
-        Returns:
-            업데이트된 기기 수
-        """
+        """기기 상태 업데이트"""
         try:
-            # device_registry와 device_cache 조인
             devices = local_cache.get_all_devices()
             registry = {d['device_uuid']: d for d in local_cache.get_all_registered_devices()}
             
@@ -345,29 +579,26 @@ class SheetsSync:
             
             self._rate_limit()
             sheet = self.spreadsheet.worksheet('device_status')
-            
-            # 기존 데이터 전체 삭제 후 재작성
             sheet.clear()
             
-            # 새 헤더 (category 추가)
             headers = ['device_uuid', 'mac_address', 'device_name', 'category',
                       'size', 'stock', 'status', 'wifi_rssi',
                       'last_heartbeat', 'ip_address', 'firmware_version',
                       'first_seen_at', 'updated_at']
             rows = [headers]
             
-            # device_cache + device_registry 병합
             all_uuids = set(d.get('device_uuid') for d in devices) | set(registry.keys())
             
             for device_uuid in all_uuids:
                 cache = next((d for d in devices if d.get('device_uuid') == device_uuid), {})
                 reg = registry.get(device_uuid, {})
                 
-                # 상태 판단
                 last_heartbeat = cache.get('last_heartbeat')
                 if last_heartbeat:
                     try:
-                        heartbeat_time = datetime.fromisoformat(last_heartbeat)
+                        heartbeat_time = datetime.fromisoformat(last_heartbeat.replace('Z', '+00:00'))
+                        if heartbeat_time.tzinfo:
+                            heartbeat_time = heartbeat_time.replace(tzinfo=None)
                         diff = (datetime.now() - heartbeat_time).total_seconds()
                         status = 'online' if diff < 120 else 'offline'
                     except:
@@ -392,8 +623,6 @@ class SheetsSync:
                 ])
             
             sheet.update('A1', rows)
-            
-            # 헤더 서식 적용
             sheet.format('A1:M1', {
                 'textFormat': {'bold': True},
                 'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
@@ -404,26 +633,66 @@ class SheetsSync:
             
         except Exception as e:
             print(f"[Sheets] 기기 상태 업데이트 오류: {e}")
-            import traceback
-            traceback.print_exc()
+            return 0
+    
+    def upload_products(self, local_cache) -> int:
+        """상품 정보 업로드 (가격 포함)"""
+        try:
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT product_id, gym_id, category, size, name, price,
+                       device_uuid, stock, enabled, display_order, updated_at
+                FROM products
+                ORDER BY display_order, product_id
+            ''')
+            products = cursor.fetchall()
+            
+            if not products:
+                return 0
+            
+            self._rate_limit()
+            sheet = self.spreadsheet.worksheet('products')
+            sheet.clear()
+            
+            headers = ['product_id', 'gym_id', 'category', 'size', 'name', 'price',
+                      'device_uuid', 'stock', 'enabled', 'display_order', 'updated_at']
+            rows = [headers]
+            
+            for p in products:
+                rows.append([
+                    p[0],  # product_id
+                    p[1],  # gym_id
+                    p[2],  # category
+                    p[3],  # size
+                    p[4],  # name
+                    p[5] or 1000,  # price
+                    p[6] or '',  # device_uuid
+                    p[7],  # stock
+                    'TRUE' if p[8] else 'FALSE',  # enabled
+                    p[9],  # display_order
+                    p[10] or ''  # updated_at
+                ])
+            
+            sheet.update('A1', rows)
+            sheet.format('A1:K1', {
+                'textFormat': {'bold': True},
+                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
+            })
+            
+            print(f"[Sheets] 상품 정보 업로드 완료: {len(products)}개")
+            return len(products)
+            
+        except Exception as e:
+            print(f"[Sheets] 상품 업로드 오류: {e}")
             return 0
     
     def upload_event_logs(self, local_cache, limit: int = 100) -> int:
-        """
-        비즈니스 이벤트 로그 업로드
-        
-        Args:
-            local_cache: LocalCache 인스턴스
-            limit: 최대 업로드 건수
-        
-        Returns:
-            업로드된 이벤트 수
-        """
+        """비즈니스 이벤트 로그 업로드"""
         try:
             conn = local_cache.conn
             cursor = conn.cursor()
             
-            # 동기화되지 않은 이벤트 조회
             cursor.execute('''
                 SELECT id, event_type, severity, device_uuid, member_id, 
                        product_id, details, created_at
@@ -440,23 +709,10 @@ class SheetsSync:
             
             self._rate_limit()
             
-            # 시트 가져오기 (없으면 생성)
-            try:
-                sheet = self.spreadsheet.worksheet('event_logs')
-            except:
-                # 시트 생성
-                sheet = self.spreadsheet.add_worksheet(title='event_logs', rows=1000, cols=10)
-                # 헤더 추가
-                headers = ['log_id', 'timestamp', 'event_type', 'severity', 
-                          'device_uuid', 'member_id', 'product_id', 'details']
-                sheet.append_row(headers)
-                # 헤더 서식
-                sheet.format('A1:H1', {
-                    'textFormat': {'bold': True},
-                    'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
-                })
+            headers = ['log_id', 'timestamp', 'event_type', 'severity', 
+                      'device_uuid', 'member_id', 'product_id', 'details']
+            sheet = self._get_or_create_sheet('event_logs', headers)
             
-            # 데이터 변환
             rows = []
             event_ids = []
             
@@ -474,10 +730,8 @@ class SheetsSync:
                 ])
                 event_ids.append(event_id)
             
-            # 시트에 추가
             sheet.append_rows(rows)
             
-            # 동기화 완료 표시
             placeholders = ', '.join(['?' for _ in event_ids])
             cursor.execute(f'''
                 UPDATE event_logs 
@@ -491,141 +745,36 @@ class SheetsSync:
             
         except Exception as e:
             print(f"[Sheets] 이벤트 로그 업로드 오류: {e}")
-            import traceback
-            traceback.print_exc()
             return 0
-    
-    def upload_products(self, local_cache) -> int:
-        """
-        상품 정보 업로드 (SQLite → Google Sheets)
-        ESP32에서 자동 생성된 상품을 Google Sheets로 동기화
-        
-        Args:
-            local_cache: LocalCache 인스턴스
-        
-        Returns:
-            업로드된 상품 수
-        """
-        try:
-            # SQLite에서 상품 조회
-            conn = local_cache.conn
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT product_id, gym_id, category, size, name, 
-                       device_uuid, stock, enabled, display_order, updated_at
-                FROM products
-                ORDER BY display_order, product_id
-            ''')
-            products = cursor.fetchall()
-            
-            if not products:
-                return 0
-            
-            self._rate_limit()
-            sheet = self.spreadsheet.worksheet('products')
-            
-            # 기존 데이터 전체 삭제 후 재작성
-            sheet.clear()
-            
-            # 헤더
-            headers = ['product_id', 'gym_id', 'category', 'size', 'name', 
-                      'device_uuid', 'stock', 'enabled', 'display_order', 'updated_at']
-            rows = [headers]
-            
-            for p in products:
-                rows.append([
-                    p[0],  # product_id
-                    p[1],  # gym_id
-                    p[2],  # category
-                    p[3],  # size
-                    p[4],  # name
-                    p[5] or '',  # device_uuid
-                    p[6],  # stock
-                    'TRUE' if p[7] else 'FALSE',  # enabled
-                    p[8],  # display_order
-                    p[9] or ''   # updated_at
-                ])
-            
-            sheet.update('A1', rows)
-            
-            # 헤더 서식 적용
-            sheet.format('A1:J1', {
-                'textFormat': {'bold': True},
-                'backgroundColor': {'red': 0.9, 'green': 0.9, 'blue': 0.9}
-            })
-            
-            print(f"[Sheets] 상품 정보 업로드 완료: {len(products)}개")
-            return len(products)
-            
-        except Exception as e:
-            print(f"[Sheets] 상품 업로드 오류: {e}")
-            import traceback
-            traceback.print_exc()
-            return 0
-    
-    def update_member_count(self, member_id: str, remaining_count: int) -> bool:
-        """
-        특정 회원의 잔여 횟수 업데이트 (실시간)
-        
-        Args:
-            member_id: 회원 ID
-            remaining_count: 새 잔여 횟수
-        
-        Returns:
-            성공 여부
-        """
-        try:
-            self._rate_limit()
-            sheet = self.spreadsheet.worksheet('members')
-            
-            # 회원 찾기
-            cell = sheet.find(member_id)
-            if cell:
-                # remaining_count 컬럼 업데이트 (4번째 컬럼)
-                sheet.update_cell(cell.row, 4, remaining_count)
-                return True
-            else:
-                print(f"[Sheets] 회원을 찾을 수 없음: {member_id}")
-                return False
-                
-        except Exception as e:
-            print(f"[Sheets] 횟수 업데이트 오류: {e}")
-            return False
     
     # =============================
     # 배치 동기화
     # =============================
     
     def sync_all_downloads(self, local_cache) -> Dict[str, int]:
-        """
-        모든 다운로드 동기화 실행
-        
-        Returns:
-            {'members': count, 'products': count}
-        """
+        """모든 다운로드 동기화 실행"""
         result = {
             'members': self.download_members(local_cache),
-            'products': self.download_products(local_cache)
+            'products': self.download_products(local_cache),
+            'voucher_products': self.download_voucher_products(local_cache),
+            'subscription_products': self.download_subscription_products(local_cache),
+            'member_vouchers': self.download_member_vouchers(local_cache),
+            'member_subscriptions': self.download_member_subscriptions(local_cache),
         }
         return result
     
     def sync_all_uploads(self, local_cache) -> Dict[str, int]:
-        """
-        모든 업로드 동기화 실행
-        
-        Returns:
-            {'rentals': count, 'usage_logs': count, 'devices': count}
-        """
+        """모든 업로드 동기화 실행"""
         result = {
             'rentals': self.upload_rentals(local_cache),
-            'usage_logs': self.upload_usage_logs(local_cache),
-            'devices': self.update_device_status(local_cache)
+            'voucher_transactions': self.upload_voucher_transactions(local_cache),
+            'devices': self.update_device_status(local_cache),
         }
         return result
 
 
 # =============================
-# 동기화 스케줄러 (백그라운드 작업)
+# 동기화 스케줄러
 # =============================
 
 class SyncScheduler:
@@ -634,15 +783,6 @@ class SyncScheduler:
     def __init__(self, sheets_sync: SheetsSync, local_cache, 
                  download_interval: int = 300,  # 5분
                  upload_interval: int = 5):     # 5초
-        """
-        초기화
-        
-        Args:
-            sheets_sync: SheetsSync 인스턴스
-            local_cache: LocalCache 인스턴스
-            download_interval: 다운로드 주기 (초)
-            upload_interval: 업로드 주기 (초)
-        """
         self.sheets_sync = sheets_sync
         self.local_cache = local_cache
         self.download_interval = download_interval
@@ -663,10 +803,7 @@ class SyncScheduler:
         print("[SyncScheduler] 중지")
     
     def tick(self):
-        """
-        스케줄러 틱 (메인 루프에서 호출)
-        주기적으로 호출하여 동기화 작업 실행
-        """
+        """스케줄러 틱 (메인 루프에서 호출)"""
         if not self.running:
             return
         
@@ -682,33 +819,22 @@ class SyncScheduler:
         # 업로드 주기 확인
         if now - self.last_upload >= self.upload_interval:
             result = self.sheets_sync.sync_all_uploads(self.local_cache)
-            if any(result.values()):  # 업로드할 데이터가 있었으면 로그
+            if any(result.values()):
                 print(f"[SyncScheduler] 업로드 완료: {result}")
             self.last_upload = now
 
 
-# =============================
-# 사용 예시
-# =============================
-
 if __name__ == '__main__':
     from local_cache import LocalCache
     
-    # LocalCache 초기화
     cache = LocalCache()
-    
-    # SheetsSync 초기화 (credentials.json 필요)
     sync = SheetsSync(
         credentials_path='config/credentials.json',
-        spreadsheet_name='F-BOX 관리 시스템'
+        spreadsheet_name='F-BOX-DB-TEST'
     )
     
     if sync.connect():
-        # 다운로드
         sync.download_members(cache)
         sync.download_products(cache)
-        
-        # 업로드
         sync.upload_rentals(cache)
         sync.update_device_status(cache)
-

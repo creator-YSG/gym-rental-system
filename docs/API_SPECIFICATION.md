@@ -3,6 +3,7 @@
 ## 개요
 
 F-BOX 시스템의 REST API 명세입니다.
+**결제 방식**: 금액권/구독권 기반 시스템
 
 ### 통신 구조 (Pull 방식)
 
@@ -12,7 +13,7 @@ F-BOX 시스템의 REST API 명세입니다.
        │  GET /api/member/by-locker/105       │
        │ ─────────────────────────────────────>│
        │                                      │
-       │  {"member": "A001", "remaining_count": ...}  │
+       │  {"member_id": "A001", "name": "홍길동"}  │
        │ <─────────────────────────────────────│
        │                                      │
 ```
@@ -33,7 +34,7 @@ F-BOX 시스템의 REST API 명세입니다.
 
 ---
 
-### 1. 락카로 회원 조회 ⭐ (핵심 API)
+### 1. 락카로 회원 조회 (핵심 API)
 
 운동복 대여기에서 NFC 태그 시 호출하는 API
 
@@ -51,9 +52,6 @@ F-BOX 시스템의 REST API 명세입니다.
   "locker_number": 105,
   "member_id": "A001",
   "name": "홍길동",
-  "remaining_count": 10,
-  "total_charged": 15,
-  "total_used": 5,
   "assigned_at": "2024-12-01T10:00:00"
 }
 ```
@@ -67,10 +65,7 @@ F-BOX 시스템의 REST API 명세입니다.
 }
 ```
 
-**사용 예시:**
-```bash
-curl http://192.168.1.10:5000/api/member/by-locker/105
-```
+**참고**: 금액권/구독권 정보는 운동복 대여기 로컬 DB에서 직접 조회
 
 ---
 
@@ -99,27 +94,9 @@ curl http://192.168.1.10:5000/api/member/by-locker/105
 }
 ```
 
-**Response (400 Bad Request):**
-```json
-{
-  "status": "error",
-  "message": "필수 파라미터 누락 (locker, member)"
-}
-```
-
-**Response (404 Not Found):**
-```json
-{
-  "status": "error",
-  "message": "회원을 찾을 수 없습니다: A001"
-}
-```
-
 ---
 
 ### 3. 락카 해제 (내부용)
-
-락카키 반납 시 내부적으로 호출
 
 **Endpoint:** `POST /api/locker/release`
 
@@ -127,22 +104,6 @@ curl http://192.168.1.10:5000/api/member/by-locker/105
 ```json
 {
   "locker": 105
-}
-```
-
-**Response (200 OK):**
-```json
-{
-  "status": "ok",
-  "locker": 105
-}
-```
-
-**Response (404 Not Found):**
-```json
-{
-  "status": "error",
-  "message": "락카 105번이 배정되어 있지 않습니다"
 }
 ```
 
@@ -159,103 +120,53 @@ curl http://192.168.1.10:5000/api/member/by-locker/105
   "count": 3,
   "lockers": [
     {"locker": 105, "member_id": "A001", "name": "홍길동"},
-    {"locker": 106, "member_id": "A002", "name": "김철수"},
-    {"locker": 107, "member_id": "A003", "name": "박영희"}
+    {"locker": 106, "member_id": "A002", "name": "김철수"}
   ]
 }
 ```
 
 ---
 
-### 5. 회원 정보 조회
-
-**Endpoint:** `GET /api/member/{member_id}`
-
-**Parameters:**
-| 이름 | 위치 | 필수 | 타입 | 설명 |
-|------|------|------|------|------|
-| member_id | path | O | string | 회원 ID |
-
-**Response (200 OK):**
-```json
-{
-  "status": "ok",
-  "member_id": "A001",
-  "name": "홍길동",
-  "remaining_count": 10,
-  "total_charged": 15,
-  "total_used": 5,
-  "synced_at": "2024-12-01T09:00:00",
-  "updated_at": "2024-12-01T10:00:00"
-}
-```
-
-**Response (404 Not Found):**
-```json
-{
-  "status": "error",
-  "message": "회원을 찾을 수 없습니다: A001"
-}
-```
-
----
-
-### 6. 헬스 체크
+### 5. 헬스 체크
 
 **Endpoint:** `GET /api/health`
-
-**Response (200 OK):**
-```json
-{
-  "status": "healthy",
-  "service": "locker-api",
-  "timestamp": "2024-12-01T10:00:00"
-}
-```
 
 ---
 
 ## 운동복/수건 대여기 API
 
 운동복/수건 대여기 라즈베리파이에서 실행되는 Flask API 서버
-(ESP32 기기 관리용, 관리자 웹 UI용)
 
 **Base URL:** `http://{운동복대여기IP}:5000`
 
 ---
 
-### 1. 대여 처리
+### 1. 전화번호 로그인
 
-**Endpoint:** `POST /api/rental/process`
+**Endpoint:** `POST /api/auth/phone`
 
 **Request Body:**
 ```json
 {
-  "locker_number": 105,
-  "items": [
-    {"product_id": "P-UPPER-105", "quantity": 1},
-    {"product_id": "P-LOWER-105", "quantity": 1},
-    {"product_id": "P-TOWEL", "quantity": 2}
-  ]
+  "phone": "01012345678"
 }
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "status": "ok",
-  "member_id": "A001",
-  "total_items": 3,
-  "count_after": 7,
-  "rentals": [
-    {"product_id": "P-UPPER-105", "device_id": "FBOX-UPPER-105", "status": "dispensed"},
-    {"product_id": "P-LOWER-105", "device_id": "FBOX-LOWER-105", "status": "dispensed"},
-    {"product_id": "P-TOWEL", "device_id": "FBOX-TOWEL-01", "status": "dispensed"}
-  ]
+  "success": true,
+  "member": {
+    "member_id": "A001",
+    "name": "홍길동",
+    "phone": "01012345678",
+    "status": "active",
+    "total_balance": 50000,
+    "active_vouchers_count": 2,
+    "active_subscriptions_count": 1
+  }
 }
 ```
-
-**참고**: 횟수 기반 - 1개 대여 = 1회 차감 (상의 1 + 하의 1 + 수건 1 = 3회 차감)
 
 ---
 
@@ -263,91 +174,189 @@ curl http://192.168.1.10:5000/api/member/by-locker/105
 
 **Endpoint:** `GET /api/products`
 
+**Response (200 OK):**
+```json
+{
+  "products": [
+    {
+      "product_id": "P-TOP-105",
+      "name": "운동복 상의 105",
+      "category": "top",
+      "size": "105",
+      "price": 1000,
+      "stock": 30,
+      "device_uuid": "FBOX-004B1238C424",
+      "connected": true,
+      "online": true
+    }
+  ]
+}
+```
+
+---
+
+### 3. 결제 수단 조회
+
+**Endpoint:** `GET /api/payment-methods/{member_id}`
+
 **Query Parameters:**
 | 이름 | 필수 | 타입 | 설명 |
 |------|------|------|------|
-| gym_id | X | string | 헬스장 ID (기본: GYM001) |
-| category | X | string | 카테고리 필터 (upper, lower, towel) |
+| category | X | string | 카테고리 (구독권 잔여 횟수 확인용) |
 
 **Response (200 OK):**
 ```json
 {
-  "status": "ok",
-  "products": [
+  "subscriptions": [
     {
-      "product_id": "P-UPPER-105",
-      "category": "upper",
-      "size": "105",
-      "name": "운동복 상의 105",
-      "device_id": "FBOX-UPPER-105",
-      "stock": 14,
-      "enabled": true
+      "subscription_id": 1,
+      "product_name": "3개월 기본 이용권",
+      "valid_until": "2025-03-01T00:00:00",
+      "remaining_today": 1,
+      "daily_limits": {"top": 1, "pants": 1, "towel": 1}
+    }
+  ],
+  "vouchers": [
+    {
+      "voucher_id": 1,
+      "product_name": "10만원 금액권",
+      "remaining_amount": 45000,
+      "valid_until": "2025-12-01T00:00:00",
+      "status": "active"
+    }
+  ],
+  "total_balance": 45000
+}
+```
+
+---
+
+### 4. 회원 카드 목록 (마이페이지)
+
+**Endpoint:** `GET /api/member/{member_id}/cards`
+
+**Response (200 OK):**
+```json
+{
+  "subscriptions": [
+    {
+      "subscription_id": 1,
+      "product_name": "3개월 기본 이용권",
+      "status": "active",
+      "valid_from": "2024-12-01",
+      "valid_until": "2025-03-01",
+      "daily_limits": {"top": 1, "pants": 1, "towel": 1}
+    }
+  ],
+  "vouchers": [
+    {
+      "voucher_id": 1,
+      "product_name": "10만원 금액권",
+      "original_amount": 100000,
+      "remaining_amount": 45000,
+      "status": "active"
     },
-    ...
+    {
+      "voucher_id": 2,
+      "product_name": "1만원 보너스",
+      "original_amount": 10000,
+      "remaining_amount": 10000,
+      "status": "pending"
+    }
   ]
 }
 ```
 
 ---
 
-### 3. 기기 상태 조회
+### 5. 대여 비용 계산
 
-**Endpoint:** `GET /api/devices`
-
-**Response (200 OK):**
-```json
-{
-  "status": "ok",
-  "devices": [
-    {
-      "device_id": "FBOX-UPPER-105",
-      "size": "105",
-      "stock": 14,
-      "door_state": "closed",
-      "floor_state": "reached",
-      "locked": false,
-      "last_heartbeat": "2024-12-01T10:09:00"
-    },
-    ...
-  ]
-}
-```
-
----
-
-### 4. 기기 명령 전송
-
-**Endpoint:** `POST /api/devices/{device_id}/command`
-
-**Parameters:**
-| 이름 | 위치 | 필수 | 타입 | 설명 |
-|------|------|------|------|------|
-| device_id | path | O | string | 기기 ID |
+**Endpoint:** `POST /api/rental/calculate`
 
 **Request Body:**
 ```json
 {
-  "command": "DISPENSE"
-}
-```
-
-또는:
-```json
-{
-  "command": "SET_STOCK",
-  "stock": 20
+  "items": [
+    {"product_id": "P-TOP-105", "quantity": 1},
+    {"product_id": "P-TOWEL-FREE", "quantity": 2}
+  ]
 }
 ```
 
 **Response (200 OK):**
 ```json
 {
-  "status": "ok",
-  "device_id": "FBOX-UPPER-105",
-  "command": "DISPENSE",
-  "sent_at": "2024-12-01T10:10:00"
+  "total_amount": 2000
 }
 ```
+
+---
+
+### 6. 구독권으로 대여
+
+**Endpoint:** `POST /api/rental/subscription`
+
+**Request Body:**
+```json
+{
+  "member_id": "A001",
+  "subscription_id": 1,
+  "items": [
+    {"product_id": "P-TOP-105", "quantity": 1, "device_uuid": "FBOX-..."}
+  ]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "대여 완료 (1개)",
+  "payment_type": "subscription",
+  "dispense_results": [
+    {"product_id": "P-TOP-105", "requested": 1, "dispensed": 1, "success": true}
+  ]
+}
+```
+
+---
+
+### 7. 금액권으로 대여 (쪼개기 지원)
+
+**Endpoint:** `POST /api/rental/voucher`
+
+**Request Body:**
+```json
+{
+  "member_id": "A001",
+  "items": [
+    {"product_id": "P-TOP-105", "quantity": 1, "device_uuid": "FBOX-..."}
+  ],
+  "voucher_selections": [
+    {"voucher_id": 1, "amount": 500},
+    {"voucher_id": 2, "amount": 500}
+  ]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "대여 완료 (1000원 차감)",
+  "payment_type": "voucher",
+  "total_amount": 1000,
+  "dispense_results": [
+    {"product_id": "P-TOP-105", "requested": 1, "dispensed": 1, "success": true}
+  ]
+}
+```
+
+---
+
+### 8. 재고 현황 조회
+
+**Endpoint:** `GET /api/inventory`
 
 ---
 
@@ -355,103 +364,35 @@ curl http://192.168.1.10:5000/api/member/by-locker/105
 
 | HTTP 상태 | status | 설명 |
 |-----------|--------|------|
-| 200 | ok | 성공 |
-| 400 | error | 잘못된 요청 (파라미터 누락/오류) |
-| 404 | error | 리소스 없음 (회원, 락카, 상품 등) |
-| 500 | error | 서버 내부 오류 |
+| 200 | ok/true | 성공 |
+| 400 | error/false | 잘못된 요청 (파라미터 누락/오류) |
+| 404 | error/false | 리소스 없음 (회원, 락카, 상품 등) |
+| 500 | error/false | 서버 내부 오류 |
 
 ---
 
-## 인증 (향후)
+## 결제 플로우
 
-현재 개발 단계에서는 인증 없이 운영합니다.
-
-**향후 추가 예정:**
-- API Key 인증
-- JWT 토큰
-- IP 화이트리스트
-
----
-
-## 사용 시나리오
-
-### 시나리오 1: 운동복 대여
-
-```sequence
-사용자 -> 운동복대여기: NFC 태그 (락카 105번)
-운동복대여기 -> 락카키대여기: GET /api/member/by-locker/105
-락카키대여기 --> 운동복대여기: {member: A001, remaining_count: 10}
-운동복대여기 -> 운동복대여기: 상품 선택 화면 표시
-사용자 -> 운동복대여기: 상품 선택 (상의+하의+수건 = 3회)
-운동복대여기 -> 운동복대여기: 횟수 차감 (10→7) + 로그 기록
-운동복대여기 -> ESP32: MQTT DISPENSE 명령
-ESP32 --> 운동복대여기: dispense_complete 이벤트
-운동복대여기 -> 운동복대여기: 재고 업데이트
+### 구독권 사용 플로우
+```
+1. 회원 로그인 → 금액권/구독권 요약 정보 반환
+2. 상품 선택 → 카테고리별 가격 표시
+3. 결제 수단 선택 → 활성 구독권/금액권 목록 표시
+4. 구독권 선택 → 일일 잔여 횟수 확인
+5. 대여 처리 → DISPENSE 성공 시에만 사용량 기록
 ```
 
-### 시나리오 2: 관리자 재고 설정
-
-```sequence
-관리자 -> 웹UI: 재고 20개로 설정
-웹UI -> 운동복대여기: POST /api/devices/FBOX-UPPER-105/command
-Note: {command: SET_STOCK, stock: 20}
-운동복대여기 -> ESP32: MQTT SET_STOCK 명령
-ESP32 --> 운동복대여기: stock_updated 이벤트
-운동복대여기 -> 웹UI: 성공 응답
+### 금액권 사용 플로우 (쪼개기)
 ```
-
----
-
-## Python 클라이언트 예시
-
-### 운동복 대여기에서 락카키 대여기 API 호출
-
-```python
-import requests
-
-LOCKER_API_BASE = "http://192.168.1.10:5000"
-
-def get_member_by_locker(locker_number: int) -> dict:
-    """락카 번호로 회원 정보 조회"""
-    url = f"{LOCKER_API_BASE}/api/member/by-locker/{locker_number}"
-    
-    try:
-        response = requests.get(url, timeout=5)
-        data = response.json()
-        
-        if response.status_code == 200 and data.get('status') == 'ok':
-            return {
-                'found': True,
-                'member_id': data['member_id'],
-                'name': data['name'],
-                'remaining_count': data['remaining_count']
-            }
-        else:
-            return {
-                'found': False,
-                'error': data.get('message', '알 수 없는 오류')
-            }
-    except requests.exceptions.RequestException as e:
-        return {
-            'found': False,
-            'error': f'네트워크 오류: {e}'
-        }
-
-
-# 사용 예시
-result = get_member_by_locker(105)
-
-if result['found']:
-    print(f"회원: {result['name']} (잔여 횟수: {result['remaining_count']}회)")
-    # 대여 처리 진행...
-else:
-    print(f"오류: {result['error']}")
+1. 금액권 A에서 200원, 금액권 B에서 800원 선택
+2. 대여 처리 → DISPENSE 성공 시에만 차감
+3. voucher_transactions에 쪼개진 거래 기록
+4. 금액권 잔액 0 → 연결된 보너스 금액권 활성화
 ```
 
 ---
 
 ## 버전 이력
 
-- **v1.0.0** (2024-12-01): 초기 버전 (Push 방식)
-- **v2.0.0** (2024-12-01): Pull 방식으로 변경
-
+- **v1.0.0** (2024-12-01): 초기 버전 (횟수 기반)
+- **v2.0.0** (2024-12-03): 금액권/구독권 기반으로 변경

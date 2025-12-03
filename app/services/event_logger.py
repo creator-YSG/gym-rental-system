@@ -104,8 +104,8 @@ class EventLogger:
     
     def log_rental_success(self, member_id: str, product_id: str, 
                            device_uuid: str, quantity: int,
-                           count_before: int, count_after: int):
-        """대여 성공 이벤트"""
+                           payment_type: str = 'voucher', amount: int = 0):
+        """대여 성공 이벤트 (금액권/구독권 기반)"""
         return self.log_event(
             event_type='rental_success',
             device_uuid=device_uuid,
@@ -113,8 +113,8 @@ class EventLogger:
             product_id=product_id,
             details={
                 'quantity': quantity,
-                'count_before': count_before,
-                'count_after': count_after,
+                'payment_type': payment_type,
+                'amount': amount,
             }
         )
     

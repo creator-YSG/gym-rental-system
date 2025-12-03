@@ -48,9 +48,6 @@ def get_member_by_locker(locker_number):
           "locker_number": 105,
           "member_id": "A001",
           "name": "홍길동",
-          "remaining_count": 10,
-          "total_charged": 15,
-          "total_used": 5,
           "assigned_at": "2024-12-01T10:00:00"
         }
         
@@ -90,9 +87,6 @@ def get_member_by_locker(locker_number):
             'locker_number': locker_number,
             'member_id': member_id,
             'name': member.get('name', ''),
-            'remaining_count': member.get('remaining_count', 0),
-            'total_charged': member.get('total_charged', 0),
-            'total_used': member.get('total_used', 0),
             'assigned_at': locker_info.get('assigned_at', '') if locker_info else ''
         }), 200
         
