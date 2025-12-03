@@ -5,28 +5,214 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>대여 완료 - 운동복 대여</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .receipt-container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        
+        .receipt-card {
+            background: #1a1a2e;
+            border-radius: 16px;
+            padding: 30px 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        
+        .receipt-header {
+            text-align: center;
+            padding-bottom: 20px;
+            border-bottom: 2px dashed #333;
+            margin-bottom: 20px;
+        }
+        
+        .receipt-icon {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, #4fd1c5, #38b2ac);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 15px;
+        }
+        
+        .receipt-icon svg {
+            width: 30px;
+            height: 30px;
+            color: #fff;
+        }
+        
+        .receipt-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 5px;
+        }
+        
+        .receipt-subtitle {
+            font-size: 14px;
+            color: #888;
+        }
+        
+        .receipt-section {
+            margin-bottom: 20px;
+        }
+        
+        .receipt-section-title {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+        }
+        
+        .receipt-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #2a2a45;
+        }
+        
+        .receipt-item:last-child {
+            border-bottom: none;
+        }
+        
+        .receipt-item-left {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .receipt-item-name {
+            font-size: 16px;
+            color: #fff;
+            font-weight: 500;
+        }
+        
+        .receipt-item-detail {
+            font-size: 13px;
+            color: #888;
+            margin-top: 3px;
+        }
+        
+        .receipt-item-payment {
+            font-size: 12px;
+            color: #4fd1c5;
+            margin-top: 3px;
+        }
+        
+        .receipt-item-right {
+            text-align: right;
+        }
+        
+        .receipt-item-qty {
+            font-size: 14px;
+            color: #aaa;
+        }
+        
+        .receipt-item-price {
+            font-size: 16px;
+            color: #fff;
+            font-weight: 600;
+        }
+        
+        .receipt-total {
+            background: #252542;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .receipt-total-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .receipt-total-row:last-child {
+            margin-bottom: 0;
+            padding-top: 10px;
+            border-top: 1px solid #3a3a5a;
+        }
+        
+        .receipt-total-label {
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .receipt-total-value {
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        
+        .receipt-total-value.highlight {
+            color: #4fd1c5;
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .receipt-footer {
+            text-align: center;
+            padding-top: 20px;
+            border-top: 2px dashed #333;
+            margin-top: 20px;
+        }
+        
+        .receipt-message {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 15px;
+        }
+        
+        .countdown {
+            font-size: 16px;
+            color: #4fd1c5;
+        }
+        
+        .countdown strong {
+            font-size: 24px;
+        }
+    </style>
 </head>
 <body>
-    <div class="complete-container">
-        <!-- 완료 아이콘 -->
-        <div class="complete-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12"></polyline>
-            </svg>
-        </div>
-
-        <!-- 완료 메시지 -->
-        <h1 class="complete-title">대여 완료!</h1>
-        <p class="complete-message">물품이 곧 나옵니다. 잠시만 기다려주세요.</p>
-
-        <!-- 대여 내역 -->
-        <div class="complete-summary" id="completeSummary">
-            <!-- 동적으로 생성됨 -->
-        </div>
-
-        <!-- 카운트다운 -->
-        <div class="countdown" id="countdown">
-            <strong>5</strong>초 후 처음 화면으로 이동합니다
+    <div class="receipt-container">
+        <div class="receipt-card">
+            <!-- 헤더 -->
+            <div class="receipt-header">
+                <div class="receipt-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div class="receipt-title">대여 완료!</div>
+                <div class="receipt-subtitle" id="receiptDate">2024-12-03 21:00:00</div>
+            </div>
+            
+            <!-- 대여 상품 목록 -->
+            <div class="receipt-section">
+                <div class="receipt-section-title">대여 상품</div>
+                <div id="receiptItems">
+                    <!-- 동적으로 생성됨 -->
+                </div>
+            </div>
+            
+            <!-- 결제 정보 -->
+            <div class="receipt-total" id="receiptTotal">
+                <!-- 동적으로 생성됨 -->
+            </div>
+            
+            <!-- 푸터 -->
+            <div class="receipt-footer">
+                <div class="receipt-message">물품이 곧 나옵니다. 잠시만 기다려주세요.</div>
+                <div class="countdown" id="countdown">
+                    <strong>5</strong>초 후 처음 화면으로
+                </div>
+            </div>
         </div>
     </div>
 
@@ -38,4 +224,3 @@
     </script>
 </body>
 </html>
-

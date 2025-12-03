@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>상품 선택 - 운동복 대여</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=2">
     <style>
         /* 마이페이지 슬라이드 패널 */
         .mypage-overlay {
@@ -26,8 +26,8 @@
         .mypage-panel {
             position: fixed;
             top: 0;
-            right: -400px;
-            width: 400px;
+            right: -500px;
+            width: 500px;
             max-width: 90vw;
             height: 100%;
             background: #1a1a2e;
@@ -42,72 +42,72 @@
         .mypage-header {
             display: flex;
             align-items: center;
-            padding: 20px;
+            padding: 25px;
             border-bottom: 1px solid #333;
         }
         .mypage-back {
             background: none;
             border: none;
             color: #fff;
-            font-size: 24px;
+            font-size: 32px;
             cursor: pointer;
-            margin-right: 15px;
+            margin-right: 20px;
         }
         .mypage-title {
-            font-size: 20px;
+            font-size: 32px;
             font-weight: 600;
             color: #fff;
         }
         .mypage-content {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
+            padding: 25px;
         }
         .mypage-section {
-            margin-bottom: 25px;
+            margin-bottom: 30px;
         }
         .mypage-section-title {
-            font-size: 14px;
+            font-size: 20px;
             color: #888;
-            margin-bottom: 12px;
+            margin-bottom: 16px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
         .card-item {
             background: #252542;
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 10px;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 14px;
         }
-        .card-item.active { border-left: 4px solid #4CAF50; }
-        .card-item.pending { border-left: 4px solid #FF9800; opacity: 0.8; }
-        .card-item.exhausted { border-left: 4px solid #666; opacity: 0.6; }
-        .card-item.expired { border-left: 4px solid #f44336; opacity: 0.5; }
+        .card-item.active { border-left: 6px solid #4CAF50; }
+        .card-item.pending { border-left: 6px solid #FF9800; opacity: 0.8; }
+        .card-item.exhausted { border-left: 6px solid #666; opacity: 0.6; }
+        .card-item.expired { border-left: 6px solid #f44336; opacity: 0.5; }
         .card-status {
-            font-size: 12px;
-            margin-bottom: 8px;
+            font-size: 18px;
+            margin-bottom: 10px;
         }
         .card-status.active { color: #4CAF50; }
         .card-status.pending { color: #FF9800; }
         .card-status.exhausted { color: #666; }
         .card-status.expired { color: #f44336; }
         .card-name {
-            font-size: 16px;
+            font-size: 26px;
             font-weight: 600;
             color: #fff;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
         }
         .card-info {
-            font-size: 13px;
+            font-size: 20px;
             color: #aaa;
             line-height: 1.5;
         }
         .card-balance {
-            font-size: 18px;
+            font-size: 28px;
             font-weight: 700;
             color: #4fd1c5;
-            margin-top: 5px;
+            margin-top: 10px;
         }
 
         /* 결제 선택 모달 */
@@ -145,20 +145,20 @@
             cursor: not-allowed;
         }
         .payment-option-name {
-            font-size: 15px;
+            font-size: 20px;
             font-weight: 600;
             color: #fff;
-            margin-bottom: 5px;
+            margin-bottom: 8px;
         }
         .payment-option-info {
-            font-size: 13px;
+            font-size: 16px;
             color: #aaa;
         }
         .payment-option-value {
-            font-size: 16px;
+            font-size: 20px;
             font-weight: 700;
             color: #4fd1c5;
-            margin-top: 5px;
+            margin-top: 8px;
         }
         .payment-total {
             background: #1e1e36;
@@ -190,17 +190,19 @@
             gap: 15px;
         }
         .member-balance {
-            font-size: 14px;
-            color: #4fd1c5;
+            font-size: 32px !important;
+            color: #4fd1c5 !important;
+            line-height: 1.5 !important;
         }
         .mypage-btn {
-            background: #3d3d5c;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 8px;
-            color: #fff;
-            cursor: pointer;
-            font-size: 14px;
+            background: #3d3d5c !important;
+            border: none !important;
+            padding: 22px 36px !important;
+            border-radius: 16px !important;
+            color: #fff !important;
+            cursor: pointer !important;
+            font-size: 28px !important;
+            font-weight: 600 !important;
         }
         .mypage-btn:hover {
             background: #4d4d6c;
@@ -208,10 +210,109 @@
 
         /* 상품 가격 표시 */
         .product-price {
-            font-size: 14px;
+            font-size: 18px;
             color: #4fd1c5;
             font-weight: 600;
-            margin-top: 5px;
+            margin-top: 8px;
+        }
+
+        /* 장바구니 아이템 결제수단 표시 */
+        .cart-item {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .cart-item:hover {
+            background: #3d3d5c;
+        }
+        .cart-item-payment {
+            display: inline-block;
+            font-size: 18px;
+            margin-top: 8px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+        }
+        .cart-item-payment.unset {
+            color: #ff9800;
+            background: rgba(255,152,0,0.2);
+        }
+        .cart-item-payment.set {
+            color: #4CAF50;
+            background: rgba(76,175,80,0.2);
+        }
+
+        /* 개별 상품 결제 수단 모달 */
+        .item-payment-modal .modal-content {
+            max-width: 500px;
+        }
+        .item-payment-info {
+            background: #1e1e36;
+            padding: 18px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            color: #fff;
+            font-size: 22px;
+        }
+        .item-payment-options {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+        .item-payment-option {
+            background: #252542;
+            border-radius: 14px;
+            padding: 22px;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .item-payment-option:hover {
+            border-color: #4fd1c5;
+        }
+        .item-payment-option.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .item-payment-option.partial {
+            border-color: #ff9800;
+        }
+        .item-payment-option .option-name {
+            font-weight: 600;
+            color: #fff;
+            font-size: 24px;
+        }
+        .item-payment-option .option-info {
+            font-size: 18px;
+            color: #aaa;
+        }
+
+        /* 금액권 쪼개기 입력 */
+        .voucher-split-input {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #3d3d5c;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #aaa;
+            font-size: 14px;
+        }
+        .voucher-split-input input {
+            width: 100px;
+            padding: 8px 10px;
+            border: 1px solid #4fd1c5;
+            border-radius: 6px;
+            background: #1e1e36;
+            color: #fff;
+            font-size: 16px;
+            text-align: right;
+        }
+        .voucher-split-input input:focus {
+            outline: none;
+            border-color: #6fe8dc;
         }
     </style>
 </head>
@@ -308,6 +409,22 @@
                 <div class="modal-buttons">
                     <button class="modal-btn cancel" onclick="closePaymentModal()">취소</button>
                     <button class="modal-btn confirm" id="confirmPaymentBtn" onclick="confirmPayment()" disabled>결제하기</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 개별 상품 결제 수단 선택 모달 -->
+        <div class="modal-overlay item-payment-modal" id="itemPaymentModal">
+            <div class="modal-content">
+                <div class="modal-title">결제 수단 선택</div>
+                <div class="item-payment-info" id="itemPaymentItemInfo">
+                    <!-- 상품 정보 표시 -->
+                </div>
+                <div class="item-payment-options" id="itemPaymentOptions">
+                    <!-- 옵션 동적 생성 -->
+                </div>
+                <div class="modal-buttons">
+                    <button class="modal-btn cancel" onclick="closeItemPaymentModal()">닫기</button>
                 </div>
             </div>
         </div>

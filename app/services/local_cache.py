@@ -893,10 +893,10 @@ class LocalCache:
             cursor = self.conn.cursor()
             cursor.execute('''
                 INSERT INTO rental_logs 
-                (member_id, locker_number, product_id, product_name, device_id, device_uuid,
-                 quantity, payment_type, subscription_id, amount, count_before, count_after, created_at, synced_to_sheets)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 0)
-            ''', (member_id, locker_number, product_id, product_name, device_uuid, device_uuid,
+                (member_id, locker_number, product_id, product_name, device_uuid,
+                 quantity, payment_type, subscription_id, amount, created_at, synced_to_sheets)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            ''', (member_id, locker_number, product_id, product_name, device_uuid,
                   quantity, payment_type, subscription_id, amount, get_kst_now().isoformat()))
             
             rental_id = cursor.lastrowid

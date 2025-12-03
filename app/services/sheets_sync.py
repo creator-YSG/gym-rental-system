@@ -687,6 +687,132 @@ class SheetsSync:
             print(f"[Sheets] 상품 업로드 오류: {e}")
             return 0
     
+    def upload_mqtt_events(self, local_cache, limit: int = 100) -> int:
+        """MQTT 이벤트 업로드"""
+        try:
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            
+            # synced_to_sheets 컬럼이 없으면 추가
+            try:
+                cursor.execute('ALTER TABLE mqtt_events ADD COLUMN synced_to_sheets INTEGER DEFAULT 0')
+                conn.commit()
+            except:
+                pass  # 이미 존재함
+            
+            cursor.execute('''
+                SELECT id, device_id, event_type, payload, created_at
+                FROM mqtt_events 
+                WHERE synced_to_sheets = 0 
+                ORDER BY created_at DESC
+                LIMIT ?
+            ''', (limit,))
+            
+            events = cursor.fetchall()
+            
+            if not events:
+                return 0
+            
+            self._rate_limit()
+            
+            headers = ['id', 'device_uuid', 'event_type', 'payload', 'created_at']
+            sheet = self._get_or_create_sheet('mqtt_events', headers)
+            
+            rows = []
+            event_ids = []
+            
+            for event in events:
+                event_id, device_id, event_type, payload, created_at = event
+                rows.append([
+                    event_id,
+                    device_id or '',
+                    event_type or '',
+                    payload or '',
+                    created_at or ''
+                ])
+                event_ids.append(event_id)
+            
+            sheet.append_rows(rows)
+            
+            placeholders = ', '.join(['?' for _ in event_ids])
+            cursor.execute(f'''
+                UPDATE mqtt_events 
+                SET synced_to_sheets = 1 
+                WHERE id IN ({placeholders})
+            ''', event_ids)
+            conn.commit()
+            
+            print(f"[Sheets] MQTT 이벤트 업로드 완료: {len(rows)}건")
+            return len(rows)
+            
+        except Exception as e:
+            print(f"[Sheets] MQTT 이벤트 업로드 오류: {e}")
+            return 0
+    
+    def upload_subscription_usage(self, local_cache) -> int:
+        """구독권 사용량 업로드"""
+        try:
+            conn = local_cache.conn
+            cursor = conn.cursor()
+            
+            # synced_to_sheets 컬럼이 없으면 추가
+            try:
+                cursor.execute('ALTER TABLE subscription_usage ADD COLUMN synced_to_sheets INTEGER DEFAULT 0')
+                conn.commit()
+            except:
+                pass  # 이미 존재함
+            
+            cursor.execute('''
+                SELECT su.id, su.subscription_id, ms.member_id, su.usage_date, 
+                       su.category, su.used_count
+                FROM subscription_usage su
+                JOIN member_subscriptions ms ON su.subscription_id = ms.subscription_id
+                WHERE su.synced_to_sheets = 0 
+                ORDER BY su.usage_date DESC
+            ''')
+            
+            usages = cursor.fetchall()
+            
+            if not usages:
+                return 0
+            
+            self._rate_limit()
+            
+            headers = ['id', 'subscription_id', 'member_id', 'usage_date', 'category', 'used_count']
+            sheet = self._get_or_create_sheet('subscription_usage', headers)
+            
+            rows = []
+            usage_ids = []
+            
+            for usage in usages:
+                usage_id, subscription_id, member_id, usage_date, category, used_count = usage
+                rows.append([
+                    usage_id,
+                    subscription_id,
+                    member_id or '',
+                    usage_date or '',
+                    category or '',
+                    used_count
+                ])
+                usage_ids.append(usage_id)
+            
+            sheet.append_rows(rows)
+            
+            placeholders = ', '.join(['?' for _ in usage_ids])
+            cursor.execute(f'''
+                UPDATE subscription_usage 
+                SET synced_to_sheets = 1 
+                WHERE id IN ({placeholders})
+            ''', usage_ids)
+            conn.commit()
+            
+            print(f"[Sheets] 구독권 사용량 업로드 완료: {len(rows)}건")
+            return len(rows)
+            
+        except Exception as e:
+            print(f"[Sheets] 구독권 사용량 업로드 오류: {e}")
+            return 0
+    
     def upload_event_logs(self, local_cache, limit: int = 100) -> int:
         """비즈니스 이벤트 로그 업로드"""
         try:
@@ -768,6 +894,8 @@ class SheetsSync:
         result = {
             'rentals': self.upload_rentals(local_cache),
             'voucher_transactions': self.upload_voucher_transactions(local_cache),
+            'subscription_usage': self.upload_subscription_usage(local_cache),
+            'mqtt_events': self.upload_mqtt_events(local_cache),
             'devices': self.update_device_status(local_cache),
         }
         return result

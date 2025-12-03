@@ -131,6 +131,34 @@ def api_auth_phone():
     active_vouchers = local_cache.get_active_vouchers(member_id)
     active_subscriptions = local_cache.get_active_subscriptions(member_id)
     
+    # 구독권 상세 정보 (카테고리별 잔여 횟수, D-day)
+    subscription_info = None
+    if active_subscriptions:
+        sub = active_subscriptions[0]  # 첫 번째 활성 구독권
+        remaining_by_cat = {}
+        for cat in ['top', 'pants', 'towel']:
+            remaining_by_cat[cat] = local_cache.get_subscription_remaining(sub['subscription_id'], cat)
+        
+        # D-day 계산
+        from datetime import datetime
+        valid_until = sub.get('valid_until', '')
+        days_left = 0
+        if valid_until:
+            try:
+                end_date = datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
+                now = datetime.now(end_date.tzinfo) if end_date.tzinfo else datetime.now()
+                days_left = (end_date - now).days
+            except:
+                pass
+        
+        subscription_info = {
+            'subscription_id': sub['subscription_id'],
+            'product_name': sub.get('product_name', sub.get('subscription_product_id', '')),
+            'remaining_by_category': remaining_by_cat,
+            'days_left': days_left,
+            'valid_until': valid_until,
+        }
+    
     return jsonify({
         'success': True,
         'member': {
@@ -141,6 +169,7 @@ def api_auth_phone():
             'total_balance': total_balance,
             'active_vouchers_count': len(active_vouchers),
             'active_subscriptions_count': len(active_subscriptions),
+            'subscription_info': subscription_info,
         }
     })
 

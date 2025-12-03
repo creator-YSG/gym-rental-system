@@ -427,7 +427,7 @@ def handle_mqtt_reconnected(device_uuid: str, payload: Dict):
 # 기본 핸들러 등록 유틸리티
 # =============================
 
-def register_default_handlers(mqtt_service: MQTTService, local_cache=None, sheets_sync=None):
+def register_default_handlers(mqtt_service: MQTTService, local_cache=None, sheets_sync=None, event_logger=None):
     """
     기본 이벤트 핸들러 등록
     
@@ -435,6 +435,7 @@ def register_default_handlers(mqtt_service: MQTTService, local_cache=None, sheet
         mqtt_service: MQTT 서비스 인스턴스
         local_cache: LocalCache 인스턴스 (선택, 재고 동기화용)
         sheets_sync: SheetsSync 인스턴스 (선택, 상품 자동 동기화용)
+        event_logger: EventLogger 인스턴스 (선택, 비즈니스 이벤트 로깅용)
     """
     # 정상 작동 이벤트
     mqtt_service.register_event_handler('boot_complete', handle_boot_complete)
@@ -558,6 +559,104 @@ def register_default_handlers(mqtt_service: MQTTService, local_cache=None, sheet
         mqtt_service.register_event_handler('dispense_complete', handle_dispense_with_cache)
         mqtt_service.register_event_handler('stock_updated', handle_stock_updated_with_cache)
         mqtt_service.register_event_handler('status', handle_status_with_cache)
+    
+    # EventLogger 연동 핸들러 (heartbeat 제외한 비즈니스 이벤트만 event_logs에 저장)
+    if event_logger:
+        def handle_dispense_complete_with_logger(device_uuid: str, payload: Dict):
+            """토출 완료 시 이벤트 로깅"""
+            stock = payload.get('stock')
+            # 기존 핸들러 실행
+            if local_cache:
+                product = local_cache.get_product_by_device_uuid(device_uuid)
+                if product:
+                    local_cache.update_product_stock(product['product_id'], stock)
+                local_cache.update_device_status(device_uuid, stock=stock)
+            # 비즈니스 이벤트 로깅
+            event_logger.log_event(
+                event_type='dispense_complete',
+                device_uuid=device_uuid,
+                severity='info',
+                details=f'재고: {stock}'
+            )
+        
+        def handle_dispense_failed_with_logger(device_uuid: str, payload: Dict):
+            """토출 실패 시 이벤트 로깅"""
+            reason = payload.get('reason', 'unknown')
+            event_logger.log_dispense_failed(
+                device_uuid=device_uuid,
+                reason=reason
+            )
+        
+        def handle_stock_low_with_logger(device_uuid: str, payload: Dict):
+            """재고 부족 시 이벤트 로깅"""
+            stock = payload.get('stock', 0)
+            product = local_cache.get_product_by_device_uuid(device_uuid) if local_cache else None
+            product_id = product['product_id'] if product else None
+            event_logger.log_stock_low(device_uuid, product_id, stock)
+        
+        def handle_stock_empty_with_logger(device_uuid: str, payload: Dict):
+            """재고 없음 시 이벤트 로깅"""
+            product = local_cache.get_product_by_device_uuid(device_uuid) if local_cache else None
+            product_id = product['product_id'] if product else None
+            event_logger.log_stock_empty(device_uuid, product_id)
+        
+        def handle_door_opened_with_logger(device_uuid: str, payload: Dict):
+            """문 열림 시 이벤트 로깅"""
+            event_logger.log_door_opened(device_uuid)
+        
+        def handle_door_closed_with_logger(device_uuid: str, payload: Dict):
+            """문 닫힘 시 이벤트 로깅"""
+            stock = payload.get('stock')
+            event_logger.log_door_closed(device_uuid, stock)
+        
+        def handle_boot_complete_with_logger(device_uuid: str, payload: Dict):
+            """부팅 완료 시 이벤트 로깅"""
+            firmware = payload.get('firmwareVersion')
+            ip = payload.get('ipAddress')
+            # 기존 핸들러 실행
+            if local_cache:
+                mac_address = payload.get('macAddress', '')
+                size = payload.get('size', '')
+                category = payload.get('category', 'other')
+                device_name = payload.get('deviceName', '')
+                stock = payload.get('stock', 0)
+                
+                device_info = local_cache.register_device(
+                    device_uuid=device_uuid,
+                    mac_address=mac_address,
+                    size=size,
+                    category=category,
+                    device_name=device_name,
+                    ip_address=ip,
+                    firmware_version=firmware,
+                    stock=stock
+                )
+                local_cache.update_device_status(device_uuid, size=size, stock=stock)
+                
+                if sheets_sync and device_info.get('product_id'):
+                    try:
+                        sheets_sync.upload_products(local_cache)
+                    except:
+                        pass
+            # 비즈니스 이벤트 로깅
+            event_logger.log_device_online(device_uuid, ip, firmware)
+        
+        def handle_error_with_logger(device_uuid: str, payload: Dict):
+            """에러 시 이벤트 로깅"""
+            error_code = payload.get('errorCode', 'UNKNOWN')
+            error_message = payload.get('errorMessage', '')
+            event_logger.log_error(device_uuid, error_code, error_message)
+        
+        # 이벤트 로거 연동 핸들러로 덮어쓰기
+        mqtt_service.register_event_handler('dispense_complete', handle_dispense_complete_with_logger)
+        mqtt_service.register_event_handler('dispense_failed', handle_dispense_failed_with_logger)
+        mqtt_service.register_event_handler('stock_low', handle_stock_low_with_logger)
+        mqtt_service.register_event_handler('stock_empty', handle_stock_empty_with_logger)
+        mqtt_service.register_event_handler('door_opened', handle_door_opened_with_logger)
+        mqtt_service.register_event_handler('door_closed', handle_door_closed_with_logger)
+        mqtt_service.register_event_handler('boot_complete', handle_boot_complete_with_logger)
+        mqtt_service.register_event_handler('error', handle_error_with_logger)
+        print("[MQTT] EventLogger 연동 핸들러 등록 완료")
     
     print("[MQTT] 기본 핸들러 등록 완료")
 

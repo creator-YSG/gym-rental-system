@@ -260,6 +260,27 @@ class RentalService:
                 amount=0,
                 product_name=item['product_name']
             )
+            
+            # 이벤트 로깅: 대여 성공
+            if self._event_logger:
+                self._event_logger.log_rental_success(
+                    member_id=member_id,
+                    product_id=item['product_id'],
+                    device_uuid=item['device_uuid'],
+                    quantity=item['dispensed_count'],
+                    payment_type='subscription',
+                    amount=0
+                )
+        
+        # 이벤트 로깅: 대여 실패
+        if self._event_logger:
+            for item in failed_items:
+                self._event_logger.log_rental_failed(
+                    member_id=member_id,
+                    product_id=item['product_id'],
+                    device_uuid=item['device_uuid'],
+                    reason=item.get('reason', 'unknown')
+                )
         
         total_dispensed = sum(i['dispensed_count'] for i in success_items)
         
@@ -425,6 +446,28 @@ class RentalService:
                     payment_type='voucher',
                     amount=0,  # 첫 번째 로그에 전체 금액 기록됨
                     product_name=item['product_name']
+                )
+            
+            # 이벤트 로깅: 대여 성공
+            if self._event_logger:
+                for item in success_items:
+                    self._event_logger.log_rental_success(
+                        member_id=member_id,
+                        product_id=item['product_id'],
+                        device_uuid=item['device_uuid'],
+                        quantity=item['dispensed_count'],
+                        payment_type='voucher',
+                        amount=item['price'] * item['dispensed_count']
+                    )
+        
+        # 이벤트 로깅: 대여 실패
+        if self._event_logger:
+            for item in failed_items:
+                self._event_logger.log_rental_failed(
+                    member_id=member_id,
+                    product_id=item['product_id'],
+                    device_uuid=item['device_uuid'],
+                    reason=item.get('reason', 'unknown')
                 )
         
         if not failed_items:

@@ -25,10 +25,13 @@ F-BOX 시스템의 중앙 데이터 저장소로 Google Sheets를 사용합니�
 5. `voucher_transactions` - 금액권 거래 내역
 6. `subscription_products` - 구독 상품
 7. `member_subscriptions` - 회원 보유 구독권
-8. `rental_history` - 대여 이력
-9. `locker_assignments` - 락카 배정 이력
-10. `device_status` - 기기 현황
-11. `config` - 시스템 설정
+8. `subscription_usage` - 구독권 일일 사용량
+9. `rental_history` - 대여 이력
+10. `locker_assignments` - 락카 배정 이력
+11. `device_status` - 기기 현황
+12. `event_logs` - 비즈니스 이벤트 로그
+13. `mqtt_events` - MQTT 이벤트 로그
+14. `config` - 시스템 설정
 
 ---
 
@@ -274,7 +277,36 @@ F-BOX 시스템의 중앙 데이터 저장소로 Google Sheets를 사용합니�
 
 ---
 
-## 시트 8: rental_history (대여 이력)
+## 시트 8: subscription_usage (구독권 일일 사용량)
+
+### 컬럼 구조
+
+| 컬럼명 | 타입 | 필수 | 설명 | 예시 |
+|--------|------|------|------|------|
+| id | NUMBER | O | 사용량 ID | 1 |
+| subscription_id | NUMBER | O | 구독권 ID | 1 |
+| member_id | TEXT | O | 회원 ID | A001 |
+| usage_date | DATE | O | 사용 날짜 | 2024-12-01 |
+| category | TEXT | O | 카테고리 | top, pants, towel |
+| used_count | NUMBER | O | 사용 횟수 | 1 |
+
+### 예시 데이터
+
+```
+| id | subscription_id | member_id | usage_date | category | used_count |
+|----|-----------------|-----------|------------|----------|------------|
+| 1  | 1               | A001      | 2024-12-01 | top      | 1          |
+| 2  | 1               | A001      | 2024-12-01 | pants    | 1          |
+| 3  | 1               | A001      | 2024-12-01 | towel    | 2          |
+```
+
+### 일일 리셋
+- 한국 시간 **자정(00:00)** 기준으로 새 날짜 레코드 생성
+- `usage_date`로 날짜별 카테고리별 사용량 추적
+
+---
+
+## 시트 9: rental_history (대여 이력)
 
 ### 컬럼 구조
 
@@ -309,7 +341,7 @@ F-BOX 시스템의 중앙 데이터 저장소로 Google Sheets를 사용합니�
 
 ---
 
-## 시트 9: locker_assignments (락카 배정 이력)
+## 시트 10: locker_assignments (락카 배정 이력)
 
 ### 컬럼 구조
 
@@ -325,7 +357,7 @@ F-BOX 시스템의 중앙 데이터 저장소로 Google Sheets를 사용합니�
 
 ---
 
-## 시트 10: device_status (기기 현황)
+## 시트 11: device_status (기기 현황)
 
 ### 컬럼 구조
 
@@ -347,7 +379,68 @@ F-BOX 시스템의 중앙 데이터 저장소로 Google Sheets를 사용합니�
 
 ---
 
-## 시트 11: config (시스템 설정)
+## 시트 12: event_logs (비즈니스 이벤트 로그)
+
+### 컬럼 구조
+
+| 컬럼명 | 타입 | 필수 | 설명 | 예시 |
+|--------|------|------|------|------|
+| log_id | NUMBER | O | 로그 ID | 1 |
+| timestamp | DATETIME | O | 발생 시각 | 2024-12-01 10:05:00 |
+| event_type | TEXT | O | 이벤트 유형 | rental_success, rental_failed, dispense_failed |
+| severity | TEXT | O | 심각도 | info, warning, error |
+| device_uuid | TEXT | | 기기 UUID | FBOX-004B1238C424 |
+| member_id | TEXT | | 회원 ID | A001 |
+| product_id | TEXT | | 상품 ID | P-TOP-105 |
+| details | TEXT | | 상세 정보 (JSON) | {"quantity": 1, "amount": 1000} |
+
+### 이벤트 유형
+
+| event_type | severity | 설명 |
+|------------|----------|------|
+| rental_success | info | 대여 성공 |
+| rental_failed | error | 대여 실패 |
+| dispense_failed | error | 토출 실패 |
+| stock_low | warning | 재고 부족 (5개 이하) |
+| stock_empty | error | 재고 없음 |
+| device_online | info | 기기 온라인 |
+| device_offline | warning | 기기 오프라인 |
+| door_opened | info | 문 열림 |
+| door_closed | info | 문 닫힘 |
+
+---
+
+## 시트 13: mqtt_events (MQTT 이벤트 로그)
+
+### 컬럼 구조
+
+| 컬럼명 | 타입 | 필수 | 설명 | 예시 |
+|--------|------|------|------|------|
+| id | NUMBER | O | 이벤트 ID | 1 |
+| device_uuid | TEXT | O | 기기 UUID | FBOX-004B1238C424 |
+| event_type | TEXT | O | 이벤트 유형 | heartbeat, dispense_complete |
+| payload | TEXT | O | 원본 페이로드 (JSON) | {"stock": 10, ...} |
+| created_at | DATETIME | O | 수신 시각 | 2024-12-01 10:05:00 |
+
+### 이벤트 유형
+
+| event_type | 설명 |
+|------------|------|
+| heartbeat | 1분마다 기기 상태 |
+| boot_complete | 기기 부팅 완료 |
+| dispense_complete | 토출 완료 |
+| dispense_failed | 토출 실패 |
+| door_opened | 문 열림 |
+| door_closed | 문 닫힘 |
+| stock_updated | 재고 변동 |
+
+### 보존 정책
+- 7일 경과한 `heartbeat` 이벤트는 자동 삭제 (cleanup_logs.py)
+- 기타 이벤트는 영구 보존
+
+---
+
+## 시트 14: config (시스템 설정)
 
 ### 컬럼 구조
 
@@ -402,9 +495,11 @@ b) 금액권 선택 (구독권 없거나 초과 시)
 
 | 데이터 | 주기 | 방식 |
 |--------|------|------|
-| 대여 이력 | 5초 배치 | rental_history 업로드 |
-| 금액권 거래 | 5초 배치 | voucher_transactions 업로드 |
-| 금액권 잔액 | 거래 시 | member_vouchers 업데이트 |
+| 대여 이력 | 5분마다 | rental_history 업로드 |
+| 금액권 거래 | 5분마다 | voucher_transactions 업로드 |
+| 구독권 사용량 | 5분마다 | subscription_usage 업로드 |
+| 이벤트 로그 | 5분마다 | event_logs 업로드 |
+| MQTT 이벤트 | 5분마다 | mqtt_events 업로드 |
 | 기기 상태 | 1분마다 | device_status 업데이트 |
 | 재고 변동 | 즉시 | products.stock 업데이트 |
 

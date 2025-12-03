@@ -13,11 +13,12 @@ mqtt_service = None
 local_cache = None
 sheets_sync = None
 sync_scheduler = None
+event_logger = None
 
 
 def create_app(config_name='default'):
     """Flask 애플리케이션 팩토리"""
-    global mqtt_service, local_cache, sheets_sync, sync_scheduler
+    global mqtt_service, local_cache, sheets_sync, sync_scheduler, event_logger
     
     app = Flask(__name__)
     
@@ -49,6 +50,16 @@ def create_app(config_name='default'):
         print("[App] LocalCache 초기화 완료")
     except Exception as e:
         print(f"[App] LocalCache 초기화 실패: {e}")
+    
+    # EventLogger 초기화
+    try:
+        from app.services.event_logger import EventLogger
+        if local_cache:
+            event_logger = EventLogger(local_cache)
+            app.event_logger = event_logger
+            print("[App] EventLogger 초기화 완료")
+    except Exception as e:
+        print(f"[App] EventLogger 초기화 실패: {e}")
     
     # MQTT 서비스 초기화 (백그라운드)
     try:
@@ -109,25 +120,25 @@ def create_app(config_name='default'):
                 app.sheets_sync = sheets_sync
                 app.sync_scheduler = sync_scheduler
                 
-                # MQTT 핸들러 등록 (sheets_sync 포함)
+                # MQTT 핸들러 등록 (sheets_sync + event_logger 포함)
                 if mqtt_service:
                     from app.services.mqtt_service import register_default_handlers
-                    register_default_handlers(mqtt_service, local_cache, sheets_sync)
-                    print("[App] MQTT 핸들러 등록 완료 (Sheets 연동 포함)")
+                    register_default_handlers(mqtt_service, local_cache, sheets_sync, event_logger)
+                    print("[App] MQTT 핸들러 등록 완료 (Sheets + EventLogger 연동)")
             else:
                 print("[App] Google Sheets 연결 실패")
                 # Sheets 없이 핸들러만 등록
                 if mqtt_service and local_cache:
                     from app.services.mqtt_service import register_default_handlers
-                    register_default_handlers(mqtt_service, local_cache, None)
-                    print("[App] MQTT 핸들러 등록 완료 (Sheets 없음)")
+                    register_default_handlers(mqtt_service, local_cache, None, event_logger)
+                    print("[App] MQTT 핸들러 등록 완료 (Sheets 없음, EventLogger 있음)")
         else:
             print(f"[App] Google Sheets 건너뜀 (credentials 없음: {creds_path})")
             # Sheets 없이 핸들러만 등록
             if mqtt_service and local_cache:
                 from app.services.mqtt_service import register_default_handlers
-                register_default_handlers(mqtt_service, local_cache, None)
-                print("[App] MQTT 핸들러 등록 완료 (Sheets 없음)")
+                register_default_handlers(mqtt_service, local_cache, None, event_logger)
+                print("[App] MQTT 핸들러 등록 완료 (Sheets 없음, EventLogger 있음)")
             
     except Exception as e:
         print(f"[App] Google Sheets 초기화 실패: {e}")
@@ -170,4 +181,9 @@ def get_sheets_sync():
 def get_sync_scheduler():
     """SyncScheduler 인스턴스 반환"""
     return sync_scheduler
+
+
+def get_event_logger():
+    """EventLogger 인스턴스 반환"""
+    return event_logger
 

@@ -30,7 +30,7 @@ body {
     width: 100vw;
     height: 100vh;
     /* 기본 폰트 크기 증가 */
-    font-size: 18px;
+    font-size: 20px;
 }
 
 /* === 공통 컨테이너 === */
@@ -58,15 +58,15 @@ body {
 }
 
 .login-header h1 {
-    font-size: 72px;
+    font-size: 84px;
     font-weight: 700;
     color: #ffffff;
-    margin-bottom: 20px;
+    margin-bottom: 24px;
     letter-spacing: -1px;
 }
 
 .login-subtitle {
-    font-size: 32px;
+    font-size: 38px;
     color: rgba(255, 255, 255, 0.7);
 }
 
@@ -80,14 +80,14 @@ body {
 .phone-input {
     background: rgba(255, 255, 255, 0.1);
     border: 4px solid rgba(255, 255, 255, 0.2);
-    border-radius: 24px;
-    padding: 32px 40px;
+    border-radius: 28px;
+    padding: 40px 48px;
     text-align: center;
-    font-size: 56px;
+    font-size: 68px;
     font-weight: 600;
-    letter-spacing: 8px;
+    letter-spacing: 10px;
     color: #ffffff;
-    min-height: 130px;
+    min-height: 160px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -124,13 +124,13 @@ body {
 }
 
 .key-btn {
-    width: 170px;
-    height: 110px;
+    width: 190px;
+    height: 130px;
     border: none;
-    border-radius: 24px;
+    border-radius: 28px;
     background: rgba(255, 255, 255, 0.1);
     color: #ffffff;
-    font-size: 52px;
+    font-size: 62px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -154,7 +154,7 @@ body {
 
 .key-clear {
     background: rgba(255, 193, 7, 0.2);
-    font-size: 32px;
+    font-size: 38px;
 }
 
 .key-clear:active {
@@ -164,13 +164,13 @@ body {
 /* 로그인 버튼 */
 .login-btn {
     width: 100%;
-    max-width: 560px;
-    height: 110px;
+    max-width: 620px;
+    height: 130px;
     border: none;
-    border-radius: 24px;
+    border-radius: 28px;
     background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
     color: #ffffff;
-    font-size: 36px;
+    font-size: 44px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -274,30 +274,30 @@ body {
 .member-info {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
 }
 
 .member-name {
-    font-size: 36px;
+    font-size: 48px;
     font-weight: 700;
 }
 
 .member-count {
-    font-size: 28px;
+    font-size: 32px;
     color: #4ecdc4;
 }
 
 .member-count strong {
-    font-size: 40px;
+    font-size: 44px;
 }
 
 .logout-btn {
-    padding: 18px 36px;
+    padding: 20px 40px;
     background: rgba(255, 255, 255, 0.1);
     border: 2px solid rgba(255, 255, 255, 0.2);
     border-radius: 16px;
     color: #ffffff;
-    font-size: 24px;
+    font-size: 28px;
     cursor: pointer;
     transition: background 0.2s;
 }
@@ -322,12 +322,12 @@ body {
 
 .category-tab {
     flex: 1;
-    min-width: 140px;
-    padding: 24px 32px;
+    min-width: 160px;
+    padding: 28px 36px;
     background: transparent;
     border: none;
     color: rgba(255, 255, 255, 0.5);
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
@@ -389,19 +389,19 @@ body {
 }
 
 .product-size {
-    font-size: 52px;
+    font-size: 60px;
     font-weight: 700;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
 }
 
 .product-name {
-    font-size: 22px;
+    font-size: 26px;
     color: rgba(255, 255, 255, 0.7);
-    margin-bottom: 12px;
+    margin-bottom: 14px;
 }
 
 .product-stock {
-    font-size: 22px;
+    font-size: 26px;
     color: #4ecdc4;
 }
 
@@ -431,17 +431,17 @@ body {
 }
 
 .cart-title {
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 600;
 }
 
 .cart-total {
-    font-size: 28px;
+    font-size: 32px;
     color: #4ecdc4;
 }
 
 .cart-total strong {
-    font-size: 36px;
+    font-size: 42px;
 }
 
 .cart-items {
@@ -479,12 +479,12 @@ body {
 }
 
 .cart-item-name {
-    font-size: 24px;
+    font-size: 28px;
     font-weight: 600;
 }
 
 .cart-item-qty {
-    font-size: 20px;
+    font-size: 24px;
     color: rgba(255, 255, 255, 0.7);
 }
 
@@ -511,12 +511,12 @@ body {
 
 .checkout-btn {
     width: 100%;
-    height: 80px;
+    height: 100px;
     border: none;
-    border-radius: 18px;
+    border-radius: 20px;
     background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
     color: #ffffff;
-    font-size: 32px;
+    font-size: 38px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s;
@@ -565,15 +565,15 @@ body {
 }
 
 .modal-title {
-    font-size: 36px;
+    font-size: 42px;
     font-weight: 700;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .modal-subtitle {
-    font-size: 24px;
+    font-size: 28px;
     color: rgba(255, 255, 255, 0.6);
-    margin-bottom: 36px;
+    margin-bottom: 40px;
 }
 
 .quantity-selector {
@@ -619,10 +619,10 @@ body {
 
 .modal-btn {
     flex: 1;
-    height: 72px;
+    height: 84px;
     border: none;
-    border-radius: 18px;
-    font-size: 28px;
+    border-radius: 20px;
+    font-size: 32px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
