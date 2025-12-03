@@ -77,6 +77,39 @@ class SheetsSync:
     # 다운로드 (Sheets → SQLite)
     # =============================
     
+    def download_config(self) -> dict:
+        """
+        설정 정보 다운로드
+        
+        Returns:
+            설정 딕셔너리 {key: value}
+        """
+        try:
+            self._rate_limit()
+            sheet = self.spreadsheet.worksheet('config')
+            records = sheet.get_all_records()
+            
+            config = {}
+            for record in records:
+                key = record.get('key')
+                value = record.get('value')
+                if key:
+                    # 숫자 변환 시도
+                    try:
+                        if '.' in str(value):
+                            config[key] = float(value)
+                        else:
+                            config[key] = int(value)
+                    except (ValueError, TypeError):
+                        config[key] = value
+            
+            print(f"[Sheets] 설정 다운로드 완료: {len(config)}개")
+            return config
+            
+        except Exception as e:
+            print(f"[Sheets] 설정 다운로드 오류: {e}")
+            return {}
+    
     def download_members(self, local_cache) -> int:
         """
         회원 정보 다운로드

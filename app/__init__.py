@@ -90,11 +90,21 @@ def create_app(config_name='default'):
             if sheets_sync.connect():
                 print("[App] Google Sheets 연결 성공")
                 
+                # config 다운로드
+                config = sheets_sync.download_config()
+                app.sheets_config = config
+                
                 # 시작 시 members 다운로드
                 sheets_sync.download_members(local_cache)
                 
-                # 동기화 스케줄러 시작
-                sync_scheduler = SyncScheduler(sheets_sync, local_cache)
+                # 동기화 스케줄러 시작 (config에서 주기 읽기)
+                sync_scheduler = SyncScheduler(
+                    sheets_sync, 
+                    local_cache,
+                    event_interval=config.get('sync_interval_upload', 300),
+                    device_interval=config.get('sync_interval_device', 60),
+                    member_interval=config.get('sync_interval_members', 300)
+                )
                 sync_scheduler.start()
                 
                 app.sheets_sync = sheets_sync
