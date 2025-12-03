@@ -109,14 +109,14 @@ class LocalCache:
         return member['remaining_count'] if member else 0
     
     def update_member_count(self, member_id: str, amount: int, 
-                           transaction_type: str, description: str = '') -> Tuple[int, int]:
+                           type: str, description: str = '') -> Tuple[int, int]:
         """
         회원 잔여 횟수 업데이트
         
         Args:
             member_id: 회원 ID
             amount: 변동 횟수 (양수: 충전, 음수: 차감)
-            transaction_type: 거래 유형 ('charge', 'rental', 'refund', 'bonus')
+            type: 거래 유형 ('charge', 'rental', 'refund', 'bonus')
             description: 설명
         
         Returns:
@@ -157,10 +157,10 @@ class LocalCache:
             cursor.execute('''
                 INSERT INTO usage_logs 
                 (member_id, amount, count_before, count_after, 
-                 transaction_type, description, created_at)
+                 type, description, created_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (member_id, amount, count_before, count_after,
-                  transaction_type, description, datetime.now().isoformat()))
+                  type, description, datetime.now().isoformat()))
             
             self.conn.commit()
             
@@ -644,7 +644,7 @@ class LocalCache:
     # =============================
     
     def add_rental_log(self, member_id: str, locker_number: int, 
-                      product_id: str, device_id: str,
+                      product_id: str, product_name: str, device_id: str,
                       quantity: int, count_before: int, count_after: int) -> int:
         """
         대여 로그 추가 (횟수 기반)
@@ -653,6 +653,7 @@ class LocalCache:
             member_id: 회원 ID
             locker_number: 락카 번호
             product_id: 상품 ID
+            product_name: 상품명
             device_id: 기기 ID
             quantity: 대여 수량 (= 차감 횟수)
             count_before: 대여 전 잔여 횟수
@@ -665,10 +666,10 @@ class LocalCache:
             cursor = self.conn.cursor()
             cursor.execute('''
                 INSERT INTO rental_logs 
-                (member_id, locker_number, product_id, device_id, 
+                (member_id, locker_number, product_id, product_name, device_id, 
                  quantity, count_before, count_after, created_at, synced_to_sheets)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
-            ''', (member_id, locker_number, product_id, device_id,
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            ''', (member_id, locker_number, product_id, product_name, device_id,
                   quantity, count_before, count_after, datetime.now().isoformat()))
             
             rental_id = cursor.lastrowid

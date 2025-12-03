@@ -97,16 +97,23 @@ class SheetsSync:
             cursor = conn.cursor()
             
             for record in records:
+                # phone 번호 정규화 (하이픈 제거)
+                phone = record.get('phone', '')
+                if phone:
+                    phone = phone.replace('-', '').replace(' ', '')
+                
                 cursor.execute('''
                     INSERT OR REPLACE INTO members 
-                    (member_id, name, remaining_count, total_charged, total_used, synced_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (member_id, name, phone, remaining_count, total_charged, total_used, status, synced_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     record.get('member_id'),
                     record.get('name'),
+                    phone,
                     record.get('remaining_count', 0),
                     record.get('total_charged', 0),
                     record.get('total_used', 0),
+                    record.get('status', 'active'),
                     datetime.now().isoformat()
                 ))
                 count += 1
@@ -271,7 +278,7 @@ class SheetsSync:
                     log['amount'],
                     log['count_before'],
                     log['count_after'],
-                    log['transaction_type'],
+                    log['type'],
                     log.get('description', ''),
                     log['created_at']
                 ])

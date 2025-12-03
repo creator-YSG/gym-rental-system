@@ -274,7 +274,7 @@ class RentalService:
             count_before, count_after = self.local_cache.update_member_count(
                 member_id=member_id,
                 amount=-total_dispensed,
-                transaction_type='rental',
+                type='rental',
                 description=f"대여 {len(success_items)}건, 총 {total_dispensed}개"
             )
             
@@ -285,6 +285,7 @@ class RentalService:
                         member_id=member_id,
                         locker_number=0,
                         product_id=item['product_id'],
+                        product_name=item['product_name'],
                         device_id=item['device_uuid'],
                         quantity=item['dispensed_count'],
                         count_before=count_before,

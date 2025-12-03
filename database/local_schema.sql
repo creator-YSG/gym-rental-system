@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS usage_logs (
     amount INT NOT NULL,             -- 양수: 충전, 음수: 차감
     count_before INT NOT NULL,
     count_after INT NOT NULL,
-    transaction_type TEXT NOT NULL,  -- 'charge', 'rental', 'refund', 'bonus'
+    type TEXT NOT NULL,              -- 'charge', 'rental', 'refund', 'bonus'
     description TEXT,
     reference_id INT,                -- rental_logs.id 참조
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS rental_logs (
     member_id TEXT NOT NULL,
     locker_number INT,
     product_id TEXT NOT NULL,
+    product_name TEXT,               -- 상품명 (조회 편의)
     device_uuid TEXT NOT NULL,       -- F-BOX 기기 UUID (MAC 기반)
     quantity INT DEFAULT 1,          -- 대여 수량 (= 차감 횟수)
     count_before INT NOT NULL,       -- 대여 전 남은 횟수
