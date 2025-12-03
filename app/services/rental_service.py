@@ -121,6 +121,15 @@ class RentalService:
         
         def on_dispense_complete(device_uuid: str, payload: dict):
             stock = payload.get('stock', 0)
+            
+            # 로컬 DB 재고 즉시 업데이트
+            if self.local_cache:
+                product = self.local_cache.get_product_by_device_uuid(device_uuid)
+                if product:
+                    self.local_cache.update_product_stock(product['product_id'], stock)
+                    print(f"[RentalService] 📦 재고 업데이트: {product['product_id']} → {stock}개")
+                self.local_cache.update_device_status(device_uuid, stock=stock)
+            
             with self._pending_lock:
                 if device_uuid in self._pending_dispense:
                     self._pending_dispense[device_uuid].set_success(stock)
