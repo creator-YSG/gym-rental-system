@@ -1,5 +1,6 @@
 /* ========================================
    운동복 대여 시스템 - 키오스크 스타일
+   터치스크린 최적화 (600x1024)
    ======================================== */
 
 /* === 기본 리셋 === */
@@ -14,7 +15,6 @@ html, body {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    /* 라즈베리파이 터치스크린 (600x1024) 대응 */
     min-width: 600px;
     min-height: 100vh;
 }
@@ -27,9 +27,10 @@ body {
     -moz-osx-font-smoothing: grayscale;
     touch-action: manipulation;
     user-select: none;
-    /* 전체 화면 사용 */
     width: 100vw;
     height: 100vh;
+    /* 기본 폰트 크기 증가 */
+    font-size: 18px;
 }
 
 /* === 공통 컨테이너 === */
@@ -42,7 +43,7 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 30px;
+    padding: 40px;
     position: relative;
     overflow: hidden;
 }
@@ -53,40 +54,40 @@ body {
 
 .login-header {
     text-align: center;
-    margin-bottom: 50px;
+    margin-bottom: 40px;
 }
 
 .login-header h1 {
-    font-size: 56px;
+    font-size: 72px;
     font-weight: 700;
     color: #ffffff;
-    margin-bottom: 16px;
+    margin-bottom: 20px;
     letter-spacing: -1px;
 }
 
 .login-subtitle {
-    font-size: 24px;
+    font-size: 32px;
     color: rgba(255, 255, 255, 0.7);
 }
 
 /* 전화번호 디스플레이 */
 .phone-display {
     width: 100%;
-    max-width: 520px;
-    margin-bottom: 40px;
+    max-width: 560px;
+    margin-bottom: 30px;
 }
 
 .phone-input {
     background: rgba(255, 255, 255, 0.1);
-    border: 3px solid rgba(255, 255, 255, 0.2);
-    border-radius: 20px;
-    padding: 28px 36px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-radius: 24px;
+    padding: 32px 40px;
     text-align: center;
-    font-size: 44px;
+    font-size: 56px;
     font-weight: 600;
-    letter-spacing: 6px;
+    letter-spacing: 8px;
     color: #ffffff;
-    min-height: 110px;
+    min-height: 130px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -109,27 +110,27 @@ body {
 /* 숫자 키패드 */
 .keypad {
     width: 100%;
-    max-width: 480px;
+    max-width: 560px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    margin-bottom: 40px;
+    gap: 12px;
+    margin-bottom: 30px;
 }
 
 .keypad-row {
     display: flex;
-    gap: 16px;
+    gap: 12px;
     justify-content: center;
 }
 
 .key-btn {
-    width: 140px;
-    height: 100px;
+    width: 170px;
+    height: 110px;
     border: none;
-    border-radius: 20px;
+    border-radius: 24px;
     background: rgba(255, 255, 255, 0.1);
     color: #ffffff;
-    font-size: 40px;
+    font-size: 52px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -153,7 +154,7 @@ body {
 
 .key-clear {
     background: rgba(255, 193, 7, 0.2);
-    font-size: 24px;
+    font-size: 32px;
 }
 
 .key-clear:active {
@@ -163,13 +164,13 @@ body {
 /* 로그인 버튼 */
 .login-btn {
     width: 100%;
-    max-width: 480px;
-    height: 90px;
+    max-width: 560px;
+    height: 110px;
     border: none;
-    border-radius: 20px;
+    border-radius: 24px;
     background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
     color: #ffffff;
-    font-size: 28px;
+    font-size: 36px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.3s ease;
@@ -189,14 +190,14 @@ body {
 /* 에러 메시지 */
 .error-message {
     position: absolute;
-    bottom: 100px;
+    bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
     background: rgba(255, 107, 107, 0.9);
     color: #ffffff;
-    padding: 16px 32px;
-    border-radius: 12px;
-    font-size: 18px;
+    padding: 24px 48px;
+    border-radius: 16px;
+    font-size: 24px;
     font-weight: 500;
     opacity: 0;
     visibility: hidden;
@@ -220,7 +221,7 @@ body {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 20px;
+    gap: 30px;
     z-index: 1000;
     opacity: 0;
     visibility: hidden;
@@ -233,9 +234,9 @@ body {
 }
 
 .loading-spinner {
-    width: 60px;
-    height: 60px;
-    border: 4px solid rgba(255, 255, 255, 0.2);
+    width: 80px;
+    height: 80px;
+    border: 6px solid rgba(255, 255, 255, 0.2);
     border-top-color: #4ecdc4;
     border-radius: 50%;
     animation: spin 1s linear infinite;
@@ -246,7 +247,7 @@ body {
 }
 
 .loading-overlay p {
-    font-size: 20px;
+    font-size: 28px;
     color: rgba(255, 255, 255, 0.8);
 }
 
@@ -262,41 +263,41 @@ body {
 /* 상단 헤더 */
 .rental-header {
     width: 100%;
-    padding: 20px 24px;
+    padding: 24px 30px;
     background: rgba(0, 0, 0, 0.3);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
 }
 
 .member-info {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 8px;
 }
 
 .member-name {
-    font-size: 24px;
+    font-size: 36px;
     font-weight: 700;
 }
 
 .member-count {
-    font-size: 18px;
+    font-size: 28px;
     color: #4ecdc4;
 }
 
 .member-count strong {
-    font-size: 28px;
+    font-size: 40px;
 }
 
 .logout-btn {
-    padding: 12px 24px;
+    padding: 18px 36px;
     background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 12px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 16px;
     color: #ffffff;
-    font-size: 16px;
+    font-size: 24px;
     cursor: pointer;
     transition: background 0.2s;
 }
@@ -310,7 +311,7 @@ body {
     width: 100%;
     display: flex;
     background: rgba(0, 0, 0, 0.2);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
 }
@@ -321,16 +322,16 @@ body {
 
 .category-tab {
     flex: 1;
-    min-width: 100px;
-    padding: 16px 24px;
+    min-width: 140px;
+    padding: 24px 32px;
     background: transparent;
     border: none;
     color: rgba(255, 255, 255, 0.5);
-    font-size: 18px;
+    font-size: 28px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
-    border-bottom: 3px solid transparent;
+    border-bottom: 4px solid transparent;
     white-space: nowrap;
 }
 
@@ -345,21 +346,21 @@ body {
     flex: 1;
     width: 100%;
     overflow-y: auto;
-    padding: 20px;
+    padding: 24px;
     -webkit-overflow-scrolling: touch;
 }
 
 .products-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 20px;
 }
 
 .product-card {
     background: rgba(255, 255, 255, 0.08);
-    border: 2px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    padding: 20px;
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    padding: 28px;
     text-align: center;
     cursor: pointer;
     transition: all 0.2s;
@@ -388,19 +389,19 @@ body {
 }
 
 .product-size {
-    font-size: 36px;
+    font-size: 52px;
     font-weight: 700;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 
 .product-name {
-    font-size: 14px;
+    font-size: 22px;
     color: rgba(255, 255, 255, 0.7);
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 
 .product-stock {
-    font-size: 14px;
+    font-size: 22px;
     color: #4ecdc4;
 }
 
@@ -409,67 +410,67 @@ body {
 }
 
 .product-offline {
-    font-size: 12px;
+    font-size: 18px;
     color: #ffc107;
-    margin-top: 4px;
+    margin-top: 8px;
 }
 
 /* 장바구니 영역 */
 .cart-area {
     width: 100%;
     background: rgba(0, 0, 0, 0.4);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    padding: 16px 20px;
+    border-top: 2px solid rgba(255, 255, 255, 0.1);
+    padding: 24px 30px;
 }
 
 .cart-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
 }
 
 .cart-title {
-    font-size: 18px;
+    font-size: 28px;
     font-weight: 600;
 }
 
 .cart-total {
-    font-size: 18px;
+    font-size: 28px;
     color: #4ecdc4;
 }
 
 .cart-total strong {
-    font-size: 24px;
+    font-size: 36px;
 }
 
 .cart-items {
     display: flex;
-    gap: 12px;
+    gap: 16px;
     overflow-x: auto;
-    padding-bottom: 12px;
-    margin-bottom: 12px;
+    padding-bottom: 16px;
+    margin-bottom: 16px;
     -webkit-overflow-scrolling: touch;
 }
 
 .cart-items::-webkit-scrollbar {
-    height: 4px;
+    height: 6px;
 }
 
 .cart-items::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
+    border-radius: 3px;
 }
 
 .cart-item {
     flex-shrink: 0;
     background: rgba(78, 205, 196, 0.2);
-    border: 1px solid #4ecdc4;
-    border-radius: 12px;
-    padding: 12px 16px;
+    border: 2px solid #4ecdc4;
+    border-radius: 16px;
+    padding: 18px 24px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
 }
 
 .cart-item-info {
@@ -478,23 +479,23 @@ body {
 }
 
 .cart-item-name {
-    font-size: 16px;
+    font-size: 24px;
     font-weight: 600;
 }
 
 .cart-item-qty {
-    font-size: 14px;
+    font-size: 20px;
     color: rgba(255, 255, 255, 0.7);
 }
 
 .cart-item-remove {
-    width: 28px;
-    height: 28px;
+    width: 44px;
+    height: 44px;
     border: none;
     border-radius: 50%;
     background: rgba(255, 107, 107, 0.3);
     color: #ff6b6b;
-    font-size: 18px;
+    font-size: 28px;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -504,18 +505,18 @@ body {
 .cart-empty {
     text-align: center;
     color: rgba(255, 255, 255, 0.4);
-    padding: 20px;
-    font-size: 16px;
+    padding: 30px;
+    font-size: 24px;
 }
 
 .checkout-btn {
     width: 100%;
-    height: 60px;
+    height: 80px;
     border: none;
-    border-radius: 14px;
+    border-radius: 18px;
     background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
     color: #ffffff;
-    font-size: 20px;
+    font-size: 32px;
     font-weight: 700;
     cursor: pointer;
     transition: all 0.2s;
@@ -555,42 +556,42 @@ body {
 
 .modal-content {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 24px;
-    padding: 32px;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    border-radius: 32px;
+    padding: 48px;
     width: 90%;
-    max-width: 360px;
+    max-width: 480px;
     text-align: center;
 }
 
 .modal-title {
-    font-size: 24px;
+    font-size: 36px;
     font-weight: 700;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 
 .modal-subtitle {
-    font-size: 16px;
+    font-size: 24px;
     color: rgba(255, 255, 255, 0.6);
-    margin-bottom: 24px;
+    margin-bottom: 36px;
 }
 
 .quantity-selector {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 24px;
-    margin-bottom: 32px;
+    gap: 36px;
+    margin-bottom: 48px;
 }
 
 .qty-btn {
-    width: 60px;
-    height: 60px;
-    border: 2px solid rgba(255, 255, 255, 0.2);
+    width: 80px;
+    height: 80px;
+    border: 3px solid rgba(255, 255, 255, 0.2);
     border-radius: 50%;
     background: transparent;
     color: #ffffff;
-    font-size: 32px;
+    font-size: 44px;
     cursor: pointer;
     transition: all 0.2s;
 }
@@ -606,22 +607,22 @@ body {
 }
 
 .qty-value {
-    font-size: 48px;
+    font-size: 72px;
     font-weight: 700;
-    min-width: 80px;
+    min-width: 100px;
 }
 
 .modal-buttons {
     display: flex;
-    gap: 12px;
+    gap: 16px;
 }
 
 .modal-btn {
     flex: 1;
-    height: 56px;
+    height: 72px;
     border: none;
-    border-radius: 14px;
-    font-size: 18px;
+    border-radius: 18px;
+    font-size: 28px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
@@ -650,14 +651,14 @@ body {
 }
 
 .complete-icon {
-    width: 120px;
-    height: 120px;
+    width: 160px;
+    height: 160px;
     background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 32px;
+    margin-bottom: 40px;
     animation: scaleIn 0.5s ease;
 }
 
@@ -673,38 +674,39 @@ body {
 }
 
 .complete-icon svg {
-    width: 60px;
-    height: 60px;
+    width: 80px;
+    height: 80px;
     stroke: #ffffff;
 }
 
 .complete-title {
-    font-size: 36px;
+    font-size: 52px;
     font-weight: 700;
-    margin-bottom: 16px;
+    margin-bottom: 24px;
 }
 
 .complete-message {
-    font-size: 20px;
+    font-size: 32px;
     color: rgba(255, 255, 255, 0.7);
-    margin-bottom: 40px;
+    margin-bottom: 48px;
 }
 
 .complete-summary {
     background: rgba(255, 255, 255, 0.08);
-    border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 40px;
+    border-radius: 24px;
+    padding: 36px;
+    margin-bottom: 48px;
     text-align: left;
     width: 100%;
-    max-width: 400px;
+    max-width: 500px;
 }
 
 .summary-row {
     display: flex;
     justify-content: space-between;
-    padding: 12px 0;
+    padding: 18px 0;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    font-size: 26px;
 }
 
 .summary-row:last-child {
@@ -721,11 +723,11 @@ body {
 
 .summary-value.highlight {
     color: #4ecdc4;
-    font-size: 20px;
+    font-size: 32px;
 }
 
 .countdown {
-    font-size: 18px;
+    font-size: 28px;
     color: rgba(255, 255, 255, 0.5);
 }
 
@@ -748,29 +750,5 @@ body {
     .product-card:hover,
     .checkout-btn:hover {
         /* 터치 디바이스에서 hover 효과 제거 */
-    }
-}
-
-/* 작은 화면 대응 */
-@media screen and (max-height: 700px) {
-    .login-header h1 {
-        font-size: 36px;
-    }
-    
-    .phone-input {
-        font-size: 28px;
-        padding: 18px 24px;
-        min-height: 70px;
-    }
-    
-    .key-btn {
-        width: 85px;
-        height: 65px;
-        font-size: 26px;
-    }
-    
-    .login-btn {
-        height: 56px;
-        font-size: 20px;
     }
 }
