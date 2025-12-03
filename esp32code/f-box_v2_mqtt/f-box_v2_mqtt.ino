@@ -1612,6 +1612,18 @@ void setup() {
   Serial.begin(115200);
   delay(500);
 
+  // ★ 모터 핀 먼저 초기화 (floating 방지 - 전원 동시 인가 시 덜덜거림 방지)
+  pinMode(PIN_STEP, OUTPUT);
+  pinMode(PIN_DIR,  OUTPUT);
+  pinMode(PIN_ENA,  OUTPUT);
+  digitalWrite(PIN_STEP, LOW);
+  digitalWrite(PIN_DIR, LOW);
+  digitalWrite(PIN_ENA, HIGH);  // 비활성화 상태로 시작 (안전)
+
+  // ★ 리미트 스위치도 먼저 초기화
+  pinMode(LIMIT_FLOOR, INPUT_PULLUP);
+  pinMode(LIMIT_DOOR,  INPUT_PULLUP);
+
   Serial.println();
   Serial.println("===== F-BOX v2.1 시작 =====");
   Serial.print("Firmware: ");
