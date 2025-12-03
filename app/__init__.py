@@ -62,8 +62,7 @@ def create_app(config_name='default'):
         if local_cache:
             mqtt_service.set_local_cache(local_cache)
         
-        # 기본 핸들러 등록
-        register_default_handlers(mqtt_service, local_cache)
+        # 핸들러는 Sheets 초기화 후 한 번만 등록 (아래에서 처리)
         
         # MQTT 연결 (실패해도 앱은 계속 실행)
         if mqtt_service.connect():
@@ -110,15 +109,25 @@ def create_app(config_name='default'):
                 app.sheets_sync = sheets_sync
                 app.sync_scheduler = sync_scheduler
                 
-                # MQTT 핸들러에 sheets_sync 연결 (새 상품 등록 시 즉시 동기화)
+                # MQTT 핸들러 등록 (sheets_sync 포함)
                 if mqtt_service:
                     from app.services.mqtt_service import register_default_handlers
                     register_default_handlers(mqtt_service, local_cache, sheets_sync)
-                    print("[App] MQTT 핸들러에 Sheets 동기화 연결")
+                    print("[App] MQTT 핸들러 등록 완료 (Sheets 연동 포함)")
             else:
                 print("[App] Google Sheets 연결 실패")
+                # Sheets 없이 핸들러만 등록
+                if mqtt_service and local_cache:
+                    from app.services.mqtt_service import register_default_handlers
+                    register_default_handlers(mqtt_service, local_cache, None)
+                    print("[App] MQTT 핸들러 등록 완료 (Sheets 없음)")
         else:
             print(f"[App] Google Sheets 건너뜀 (credentials 없음: {creds_path})")
+            # Sheets 없이 핸들러만 등록
+            if mqtt_service and local_cache:
+                from app.services.mqtt_service import register_default_handlers
+                register_default_handlers(mqtt_service, local_cache, None)
+                print("[App] MQTT 핸들러 등록 완료 (Sheets 없음)")
             
     except Exception as e:
         print(f"[App] Google Sheets 초기화 실패: {e}")
