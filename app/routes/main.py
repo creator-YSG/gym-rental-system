@@ -40,7 +40,12 @@ def get_rental_service():
     global _rental_service
     if _rental_service is None and RentalService:
         try:
+            from flask import current_app
             _rental_service = RentalService(get_local_cache())
+            # 앱의 MQTT 서비스 주입 (중복 연결 방지)
+            if hasattr(current_app, 'mqtt_service') and current_app.mqtt_service:
+                _rental_service.set_mqtt_service(current_app.mqtt_service)
+                print("[Routes] RentalService에 앱 MQTT 서비스 주입 완료")
         except Exception as e:
             print(f"[Routes] RentalService 초기화 실패: {e}")
     return _rental_service

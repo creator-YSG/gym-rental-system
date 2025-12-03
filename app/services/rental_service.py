@@ -94,22 +94,21 @@ class RentalService:
             except Exception as e:
                 print(f"[RentalService] EventLogger 초기화 실패: {e}")
     
+    def set_mqtt_service(self, mqtt_service):
+        """외부에서 MQTT 서비스 주입"""
+        self._mqtt_service = mqtt_service
+        if mqtt_service and not self._handlers_registered:
+            self._register_dispense_handlers()
+    
     @property
     def mqtt_service(self) -> Optional[MQTTService]:
-        """MQTT 서비스 (lazy 초기화)"""
+        """MQTT 서비스 (외부 주입 필수)"""
         if self._mqtt_service is None:
-            try:
-                self._mqtt_service = MQTTService()
-                # local_cache 설정 (MQTT 이벤트 DB 로깅용)
-                if self.local_cache:
-                    self._mqtt_service.set_local_cache(self.local_cache)
-                self._mqtt_service.connect()
-            except Exception as e:
-                print(f"[RentalService] MQTT 연결 실패: {e}")
-                return None
+            print("[RentalService] ⚠️ MQTT 서비스가 설정되지 않음. set_mqtt_service() 호출 필요")
+            return None
         
         # DISPENSE 응답 핸들러 등록
-        if not self._handlers_registered and self._mqtt_service:
+        if not self._handlers_registered:
             self._register_dispense_handlers()
         
         return self._mqtt_service
