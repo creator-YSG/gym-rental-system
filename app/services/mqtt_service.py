@@ -30,6 +30,7 @@ class MQTTService:
         
         self.client = mqtt.Client(client_id='fbox-server', clean_session=True)
         self.connected = False
+        self._reconnecting = False
         
         # LocalCache 참조 (이벤트 로깅용)
         self.local_cache = None
@@ -41,6 +42,9 @@ class MQTTService:
         self.client.on_connect = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
+        
+        # 자동 재연결 설정 (min 1초, max 30초)
+        self.client.reconnect_delay_set(min_delay=1, max_delay=30)
         
         print(f"[MQTT] 초기화: {broker_host}:{broker_port}")
     
@@ -84,8 +88,14 @@ class MQTTService:
     def _on_connect(self, client, userdata, flags, rc):
         """연결 성공 콜백"""
         if rc == 0:
+            was_reconnect = self.connected == False and self._reconnecting
             self.connected = True
-            print("[MQTT] 브로커 연결됨")
+            self._reconnecting = False
+            
+            if was_reconnect:
+                print("[MQTT] ✅ 브로커 재연결 성공")
+            else:
+                print("[MQTT] 브로커 연결됨")
             
             # 모든 F-BOX 기기의 상태 토픽 구독
             self.subscribe_all_devices()
@@ -97,8 +107,12 @@ class MQTTService:
         """연결 해제 콜백"""
         self.connected = False
         if rc != 0:
-            print(f"[MQTT] 예기치 않은 연결 해제: RC={rc}")
+            self._reconnecting = True
+            print(f"[MQTT] ⚠️ 예기치 않은 연결 해제: RC={rc}, 자동 재연결 시도 중...")
+            # paho-mqtt의 loop_start()가 자동으로 재연결 시도함
+            # reconnect_delay_set()으로 설정된 간격으로 재시도
         else:
+            self._reconnecting = False
             print("[MQTT] 정상 연결 해제")
     
     def _on_message(self, client, userdata, msg):
