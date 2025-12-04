@@ -464,7 +464,106 @@ body {
     border-radius: 3px;
 }
 
-/* 장바구니 섹션 */
+/* 장바구니 그리드 (카드 형태) */
+.cart-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.cart-card {
+    position: relative;
+    background: rgba(78, 205, 196, 0.15);
+    border: 2px solid rgba(78, 205, 196, 0.3);
+    border-radius: 16px;
+    padding: 16px;
+    min-width: 140px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.cart-card-remove {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 107, 107, 0.4);
+    color: #ff6b6b;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cart-card-remove:active {
+    background: rgba(255, 107, 107, 0.6);
+}
+
+.cart-card-info {
+    text-align: center;
+    margin-top: 10px;
+}
+
+.cart-card-name {
+    font-size: 24px;
+    font-weight: 600;
+    color: #fff;
+}
+
+.cart-card-size {
+    font-size: 36px;
+    font-weight: 700;
+    color: #4fd1c5;
+    margin-top: 4px;
+}
+
+.cart-card-qty {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 10px;
+    padding: 6px 10px;
+}
+
+.cart-card-qty-btn {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    color: #fff;
+    font-size: 26px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cart-card-qty-btn:active {
+    background: rgba(78, 205, 196, 0.4);
+}
+
+.cart-card-qty-value {
+    font-size: 28px;
+    font-weight: 700;
+    min-width: 30px;
+    text-align: center;
+}
+
+.cart-card-price {
+    font-size: 24px;
+    color: #4fd1c5;
+    font-weight: 600;
+}
+
+/* 기존 장바구니 스타일 (호환성) */
 .cart-section {
     margin-bottom: 16px;
 }
@@ -483,7 +582,6 @@ body {
     gap: 10px;
 }
 
-/* 장바구니 아이템 */
 .cart-item {
     background: rgba(78, 205, 196, 0.15);
     border: 2px solid rgba(78, 205, 196, 0.3);
@@ -510,7 +608,6 @@ body {
     flex-wrap: wrap;
 }
 
-/* 수량 조절 버튼 */
 .cart-qty-controls {
     display: flex;
     align-items: center;
@@ -554,7 +651,7 @@ body {
     text-align: right;
 }
 
-/* 결제수단 선택 버튼 */
+/* 결제수단 선택 버튼 (미사용) */
 .cart-payment-btn {
     padding: 12px 18px;
     border-radius: 10px;

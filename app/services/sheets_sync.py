@@ -900,6 +900,9 @@ class SheetsSync:
             'subscription_usage': self.upload_subscription_usage(local_cache),
             'mqtt_events': self.upload_mqtt_events(local_cache),
             'devices': self.update_device_status(local_cache),
+            'products': self.upload_products(local_cache),
+            'member_vouchers': self.upload_member_vouchers(local_cache),
+            'member_subscriptions': self.upload_member_subscriptions(local_cache),
         }
         return result
 

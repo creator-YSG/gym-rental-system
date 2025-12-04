@@ -391,95 +391,92 @@ function renderCart() {
         return;
     }
     
-    // 섹션별 분류
-    const unassigned = [];
-    const subscription = [];
-    const voucher = [];
-    
+    // 같은 상품끼리 합치기 (product_id + size 기준)
+    const mergedCart = [];
     AppState.cart.forEach((item, idx) => {
-        const itemWithIndex = { ...item, cartIndex: idx };
-        if (!item.payment) {
-            unassigned.push(itemWithIndex);
-        } else if (item.payment.type === 'subscription') {
-            subscription.push(itemWithIndex);
-        } else if (item.payment.type === 'voucher') {
-            voucher.push(itemWithIndex);
+        const existing = mergedCart.find(m => m.product_id === item.product_id && m.size === item.size);
+        if (existing) {
+            existing.quantity += item.quantity;
+            existing.originalIndices.push(idx);
+        } else {
+            mergedCart.push({
+                ...item,
+                originalIndices: [idx]
+            });
         }
     });
     
-    let html = '';
-    
-    // 미분류 섹션
-    if (unassigned.length > 0) {
-        html += `<div class="cart-section">
-            <div class="cart-section-title">⚪ 미분류</div>
-            <div class="cart-section-items">
-                ${unassigned.map(item => renderCartItem(item, true)).join('')}
-            </div>
-        </div>`;
-    }
-    
-    // 구독권 섹션
-    if (subscription.length > 0) {
-        html += `<div class="cart-section">
-            <div class="cart-section-title">📋 구독권</div>
-            <div class="cart-section-items">
-                ${subscription.map(item => renderCartItem(item, false)).join('')}
-            </div>
-        </div>`;
-    }
-    
-    // 금액권 섹션
-    if (voucher.length > 0) {
-        html += `<div class="cart-section">
-            <div class="cart-section-title">💳 금액권</div>
-            <div class="cart-section-items">
-                ${voucher.map(item => renderCartItem(item, false)).join('')}
-            </div>
-        </div>`;
-    }
+    // 카드 형태로 렌더링
+    const html = `
+        <div class="cart-grid">
+            ${mergedCart.map((item, idx) => renderCartCard(item, idx)).join('')}
+        </div>
+    `;
     
     cartItemsEl.innerHTML = html;
     
     const totalAmount = AppState.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalQty = AppState.cart.reduce((sum, item) => sum + item.quantity, 0);
     
-    if (cartTotalEl) cartTotalEl.innerHTML = `총 <strong>${formatPrice(totalAmount)}</strong>`;
+    if (cartTotalEl) cartTotalEl.innerHTML = `${totalQty}개 <strong>${formatPrice(totalAmount)}</strong>`;
     if (checkoutBtn) checkoutBtn.disabled = AppState.cart.length === 0;
 }
 
-function renderCartItem(item, isUnassigned) {
-    const paymentLabel = getPaymentLabel(item.payment);
-    const product = AppState.products.find(p => p.product_id === item.product_id);
-    const maxQty = product?.stock || 10;
+function renderCartCard(item, mergedIndex) {
+    const firstIdx = item.originalIndices[0];
     
     return `
-        <div class="cart-item">
-            <div class="cart-item-name">${item.name} (${item.size})</div>
-            <div class="cart-item-controls">
-                <div class="cart-qty-controls">
-                    <button class="cart-qty-btn" onclick="changeCartQuantity(${item.cartIndex}, -1)">−</button>
-                    <span class="cart-qty-value">${item.quantity}</span>
-                    <button class="cart-qty-btn" onclick="changeCartQuantity(${item.cartIndex}, 1)">+</button>
-                </div>
-                <div class="cart-item-price">${formatPrice(item.price * item.quantity)}</div>
-                ${isUnassigned ? `
-                    <button class="cart-payment-btn unset" onclick="openItemPaymentModal(${item.cartIndex})">
-                        결제수단 선택
-                    </button>
-                ` : `
-                    <span class="cart-payment-label set">${paymentLabel}</span>
-                `}
-                <button class="cart-item-remove" onclick="removeCartItem(${item.cartIndex})">×</button>
+        <div class="cart-card">
+            <button class="cart-card-remove" onclick="removeCartItemByProduct('${item.product_id}', '${item.size}')">×</button>
+            <div class="cart-card-info">
+                <div class="cart-card-name">${item.name}</div>
+                <div class="cart-card-size">${item.size}</div>
             </div>
+            <div class="cart-card-qty">
+                <button class="cart-card-qty-btn" onclick="changeCartQuantityByProduct('${item.product_id}', '${item.size}', -1)">−</button>
+                <span class="cart-card-qty-value">${item.quantity}</span>
+                <button class="cart-card-qty-btn" onclick="changeCartQuantityByProduct('${item.product_id}', '${item.size}', 1)">+</button>
+            </div>
+            <div class="cart-card-price">${formatPrice(item.price * item.quantity)}</div>
         </div>
     `;
 }
 
-function getPaymentLabel(payment) {
-    if (!payment) return '결제수단 선택';
-    if (payment.type === 'subscription') return '구독권';
-    if (payment.type === 'voucher') return payment.name || '금액권';
-    return '결제수단 선택';
+// 상품 기준으로 수량 변경
+function changeCartQuantityByProduct(productId, size, delta) {
+    const product = AppState.products.find(p => p.product_id === productId);
+    if (!product) return;
+    
+    // 해당 상품의 총 수량 계산
+    const currentQty = AppState.cart
+        .filter(item => item.product_id === productId && item.size === size)
+        .reduce((sum, item) => sum + item.quantity, 0);
+    
+    const newQty = currentQty + delta;
+    
+    if (newQty <= 0) {
+        // 전부 삭제
+        AppState.cart = AppState.cart.filter(item => !(item.product_id === productId && item.size === size));
+    } else if (newQty > product.stock) {
+        showError('재고가 부족합니다.');
+        return;
+    } else {
+        // 첫 번째 아이템의 수량 조절
+        const firstItem = AppState.cart.find(item => item.product_id === productId && item.size === size);
+        if (firstItem) {
+            firstItem.quantity += delta;
+        }
+    }
+    
+    renderProducts();
+    renderCart();
+}
+
+// 상품 기준으로 삭제
+function removeCartItemByProduct(productId, size) {
+    AppState.cart = AppState.cart.filter(item => !(item.product_id === productId && item.size === size));
+    renderProducts();
+    renderCart();
 }
 
 // ========================================
@@ -824,14 +821,22 @@ function renderPaymentConfirmModal(subscriptionAssignments, voucherItems, vouche
                 <div class="voucher-split-inputs" id="voucherSplitInputs">
         `;
         
-        // 금액권별 입력 필드 (유효기간 임박 순 정렬)
+        // 금액권별 입력 필드 (유효기간 짧은 순 정렬)
         const sortedVouchers = [...(vouchers || [])].sort((a, b) => {
             return new Date(a.valid_until) - new Date(b.valid_until);
         });
         
+        // 자동 금액 배정: 전체 금액을 한번에 결제 가능한 금액권 우선 선택
+        const autoAssignments = autoAssignVoucherAmounts(sortedVouchers, voucherTotalAmount);
+        
         sortedVouchers.forEach((v, idx) => {
-            const isExpiringSoon = new Date(v.valid_until) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-            const defaultAmount = idx === 0 ? Math.min(v.remaining_amount, voucherTotalAmount) : 0;
+            // 종료일자 포맷팅
+            const validUntil = v.valid_until ? new Date(v.valid_until) : null;
+            const expiryText = validUntil ? 
+                `~${validUntil.getMonth() + 1}/${validUntil.getDate()}` : '';
+            
+            // 자동 배정된 금액
+            const assignedAmount = autoAssignments[v.voucher_id] || 0;
             
             html += `
                 <div class="voucher-input-row">
@@ -839,7 +844,7 @@ function renderPaymentConfirmModal(subscriptionAssignments, voucherItems, vouche
                         <span class="voucher-input-name">${v.product_name}</span>
                         <div class="voucher-input-meta">
                             <span class="voucher-input-balance">잔액: ${formatPrice(v.remaining_amount)}</span>
-                            ${isExpiringSoon ? '<span class="voucher-expiring">⚠️ 곧 만료</span>' : ''}
+                            <span class="voucher-expiry">${expiryText}</span>
                         </div>
                     </div>
                     <div class="voucher-input-field">
@@ -849,7 +854,7 @@ function renderPaymentConfirmModal(subscriptionAssignments, voucherItems, vouche
                             data-voucher-id="${v.voucher_id}"
                             data-max="${v.remaining_amount}"
                             data-voucher-name="${v.product_name}"
-                            value="${defaultAmount}"
+                            value="${assignedAmount}"
                             readonly>
                         <span class="voucher-input-unit">원</span>
                         <button type="button" class="voucher-use-all-btn" data-voucher-id="${v.voucher_id}" data-max="${v.remaining_amount}">전액</button>
@@ -870,8 +875,8 @@ function renderPaymentConfirmModal(subscriptionAssignments, voucherItems, vouche
         `;
     }
     
-    // 버튼 (금액권이 없으면 바로 활성화)
-    const btnDisabled = voucherTotalAmount > 0 ? 'disabled' : '';
+    // 버튼 (자동 배정으로 항상 충족되므로 바로 활성화)
+    const btnDisabled = '';
     html += `
         <div class="payment-modal-buttons">
             <button class="modal-btn cancel" onclick="closeBulkPaymentModal()">취소</button>
@@ -890,6 +895,35 @@ function renderPaymentConfirmModal(subscriptionAssignments, voucherItems, vouche
     if (voucherTotalAmount > 0) {
         updateVoucherTotal();
     }
+}
+
+// 금액권 자동 배정: 전체 금액을 한번에 결제 가능한 금액권 우선
+function autoAssignVoucherAmounts(sortedVouchers, totalAmount) {
+    const assignments = {};
+    
+    // 1. 먼저 전체 금액을 한번에 결제 가능한 금액권 찾기 (유효기간 짧은 순)
+    const singlePayVoucher = sortedVouchers.find(v => v.remaining_amount >= totalAmount);
+    
+    if (singlePayVoucher) {
+        // 한번에 결제 가능한 금액권이 있으면 그것만 사용
+        sortedVouchers.forEach(v => {
+            assignments[v.voucher_id] = (v.voucher_id === singlePayVoucher.voucher_id) ? totalAmount : 0;
+        });
+    } else {
+        // 없으면 유효기간 짧은 순으로 채워나가기
+        let remaining = totalAmount;
+        sortedVouchers.forEach(v => {
+            if (remaining > 0) {
+                const useAmount = Math.min(v.remaining_amount, remaining);
+                assignments[v.voucher_id] = useAmount;
+                remaining -= useAmount;
+            } else {
+                assignments[v.voucher_id] = 0;
+            }
+        });
+    }
+    
+    return assignments;
 }
 
 function updateVoucherTotal() {
