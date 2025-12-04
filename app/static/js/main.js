@@ -739,26 +739,31 @@ function openPaymentConfirmModal() {
         subRemaining[sub.subscription_id] = { ...sub.remaining_by_category };
     });
     
-    // 각 아이템에 대해 구독권 우선 배정
+    // 각 아이템에 대해 구독권 우선 배정 (부분 배정 지원)
     cartItems.forEach(item => {
-        let assigned = false;
+        let remainingQty = item.quantity;
         
-        // 구독권 확인 (첫 번째 가능한 구독권에 배정)
+        // 구독권 확인 (가능한 만큼 배정)
         for (const sub of (subscriptions || [])) {
-            const remaining = subRemaining[sub.subscription_id]?.[item.category] || 0;
-            if (remaining >= item.quantity) {
+            if (remainingQty <= 0) break;
+            
+            const subRemain = subRemaining[sub.subscription_id]?.[item.category] || 0;
+            if (subRemain > 0) {
+                // 구독권으로 처리할 수 있는 수량
+                const assignQty = Math.min(subRemain, remainingQty);
+                
                 subscriptionAssignments.push({
-                    item: item,
+                    item: { ...item, quantity: assignQty },
                     subscription: sub,
                 });
-                subRemaining[sub.subscription_id][item.category] -= item.quantity;
-                assigned = true;
-                break;
+                subRemaining[sub.subscription_id][item.category] -= assignQty;
+                remainingQty -= assignQty;
             }
         }
         
-        if (!assigned) {
-            voucherItems.push(item);
+        // 남은 수량은 금액권으로
+        if (remainingQty > 0) {
+            voucherItems.push({ ...item, quantity: remainingQty });
         }
     });
     
@@ -949,19 +954,20 @@ function useAllVoucherBalance(voucherId, maxAmount) {
 }
 
 async function confirmPaymentAndRent() {
-    // 구독권 배정 적용
+    // 장바구니를 새로 구성 (구독권/금액권 분할 적용)
+    const newCart = [];
+    
+    // 구독권 배정 아이템 추가
     const subAssignments = AppState.pendingSubscriptionAssignments || [];
     subAssignments.forEach(({ item, subscription }) => {
-        const cartItem = AppState.cart.find(ci => 
-            ci.product_id === item.product_id && ci.size === item.size
-        );
-        if (cartItem) {
-            cartItem.payment = {
+        newCart.push({
+            ...item,
+            payment: {
                 type: 'subscription',
                 id: subscription.subscription_id,
                 name: '구독권'
-            };
-        }
+            }
+        });
     });
     
     // 금액권 배정 적용 (쪼개기 정보 포함)
@@ -980,21 +986,22 @@ async function confirmPaymentAndRent() {
         }
     });
     
-    // 금액권 아이템에 payment 정보 설정 (첫 번째 금액권으로)
-    if (voucherSelections.length > 0) {
+    // 금액권 아이템 추가 (첫 번째 금액권으로)
+    if (voucherSelections.length > 0 && voucherItems.length > 0) {
         voucherItems.forEach(item => {
-            const cartItem = AppState.cart.find(ci => 
-                ci.product_id === item.product_id && ci.size === item.size && !ci.payment
-            );
-            if (cartItem) {
-                cartItem.payment = {
+            newCart.push({
+                ...item,
+                payment: {
                     type: 'voucher',
                     id: voucherSelections[0].voucher_id,
                     name: '금액권'
-                };
-            }
+                }
+            });
         });
     }
+    
+    // 장바구니 교체
+    AppState.cart = newCart;
     
     // 쪼개기 정보 저장
     AppState.voucherSelections = voucherSelections;
