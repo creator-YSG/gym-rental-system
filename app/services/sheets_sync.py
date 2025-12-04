@@ -128,6 +128,9 @@ class SheetsSync:
                 phone = record.get('phone', '')
                 if phone:
                     phone = str(phone).replace('-', '').replace(' ', '')
+                    # 전화번호가 0으로 시작하지 않으면 앞에 0 추가
+                    if phone and not phone.startswith('0'):
+                        phone = '0' + phone
                 
                 cursor.execute('''
                     INSERT OR REPLACE INTO members 

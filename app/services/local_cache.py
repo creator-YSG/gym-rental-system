@@ -144,17 +144,43 @@ class LocalCache:
     # =============================
     
     def get_member(self, member_id: str) -> Optional[Dict]:
-        """회원 정보 조회 (메모리 캐시)"""
-        return self._members_cache.get(member_id)
+        """회원 정보 조회 (캐시 → DB fallback)"""
+        # 1. 캐시에서 조회
+        if member_id in self._members_cache:
+            return self._members_cache[member_id]
+        
+        # 2. 캐시에 없으면 DB에서 직접 조회
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM members WHERE member_id = ?', (member_id,))
+            row = cursor.fetchone()
+            if row:
+                member = dict(row)
+                self._members_cache[member_id] = member  # 캐시에 추가
+                return member
+        return None
     
     def get_member_by_phone(self, phone: str) -> Optional[Dict]:
-        """전화번호로 회원 조회"""
+        """전화번호로 회원 조회 (캐시 → DB fallback)"""
         # 하이픈 제거
         phone_normalized = phone.replace('-', '').replace(' ', '')
         
+        # 1. 캐시에서 조회
         for member in self._members_cache.values():
             member_phone = (member.get('phone') or '').replace('-', '').replace(' ', '')
             if member_phone == phone_normalized:
+                return member
+        
+        # 2. 캐시에 없으면 DB에서 직접 조회
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM members WHERE phone = ? OR phone = ?', 
+                          (phone, phone_normalized))
+            row = cursor.fetchone()
+            if row:
+                member = dict(row)
+                self._members_cache[member['member_id']] = member  # 캐시에 추가
+                print(f"[LocalCache] DB에서 회원 로드: {member['member_id']} - {member['name']}")
                 return member
         return None
     

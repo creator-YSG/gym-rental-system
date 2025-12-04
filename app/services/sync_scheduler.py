@@ -108,7 +108,7 @@ class SyncScheduler:
             time.sleep(self.member_interval)
     
     def _sync_events(self):
-        """이벤트 + 대여 로그 업로드"""
+        """이벤트 + 대여 + 결제 로그 업로드"""
         if not self.sheets_sync:
             return
         
@@ -118,8 +118,17 @@ class SyncScheduler:
         # 대여 로그 업로드
         rental_count = self.sheets_sync.upload_rentals(self.local_cache)
         
-        if event_count > 0 or rental_count > 0:
-            print(f"[SyncScheduler] 업로드: 이벤트 {event_count}건, 대여 {rental_count}건")
+        # 구독권 사용량 업로드
+        subscription_count = self.sheets_sync.upload_subscription_usage(self.local_cache)
+        
+        # 금액권 거래 업로드
+        voucher_count = self.sheets_sync.upload_voucher_transactions(self.local_cache)
+        
+        # 금액권 잔액 동기화 (remaining_amount 업데이트)
+        voucher_balance_count = self.sheets_sync.upload_member_vouchers(self.local_cache)
+        
+        if event_count > 0 or rental_count > 0 or subscription_count > 0 or voucher_count > 0 or voucher_balance_count > 0:
+            print(f"[SyncScheduler] 업로드: 이벤트 {event_count}건, 대여 {rental_count}건, 구독권 {subscription_count}건, 금액권거래 {voucher_count}건, 금액권잔액 {voucher_balance_count}건")
     
     def _sync_device_status(self):
         """기기 상태 업데이트"""

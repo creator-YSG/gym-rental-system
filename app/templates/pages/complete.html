@@ -4,78 +4,87 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>대여 완료 - 운동복 대여</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=5">
     <style>
         .receipt-container {
-            max-width: 400px;
-            margin: 0 auto;
-            padding: 20px;
-            min-height: 100vh;
+            width: 100vw;
+            height: 100vh;
+            padding: 40px;
             display: flex;
             flex-direction: column;
             justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         }
         
         .receipt-card {
+            width: 100%;
+            max-width: 600px;
             background: #1a1a2e;
-            border-radius: 16px;
-            padding: 30px 25px;
+            border-radius: 24px;
+            padding: 50px 40px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.3);
         }
         
         .receipt-header {
             text-align: center;
-            padding-bottom: 20px;
-            border-bottom: 2px dashed #333;
-            margin-bottom: 20px;
+            padding-bottom: 30px;
+            border-bottom: 3px dashed #333;
+            margin-bottom: 30px;
         }
         
         .receipt-icon {
-            width: 60px;
-            height: 60px;
+            width: 120px;
+            height: 120px;
             background: linear-gradient(135deg, #4fd1c5, #38b2ac);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            margin: 0 auto 15px;
+            margin: 0 auto 25px;
+            animation: scaleIn 0.5s ease;
+        }
+        
+        @keyframes scaleIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
         }
         
         .receipt-icon svg {
-            width: 30px;
-            height: 30px;
+            width: 60px;
+            height: 60px;
             color: #fff;
         }
         
         .receipt-title {
-            font-size: 24px;
+            font-size: 48px;
             font-weight: 700;
             color: #fff;
-            margin-bottom: 5px;
+            margin-bottom: 10px;
         }
         
         .receipt-subtitle {
-            font-size: 14px;
+            font-size: 24px;
             color: #888;
         }
         
         .receipt-section {
-            margin-bottom: 20px;
+            margin-bottom: 30px;
         }
         
         .receipt-section-title {
-            font-size: 12px;
+            font-size: 26px;
             color: #666;
             text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-bottom: 10px;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
         }
         
         .receipt-item {
             display: flex;
             justify-content: space-between;
-            padding: 12px 0;
-            border-bottom: 1px solid #2a2a45;
+            padding: 20px 0;
+            border-bottom: 2px solid #2a2a45;
         }
         
         .receipt-item:last-child {
@@ -88,94 +97,116 @@
         }
         
         .receipt-item-name {
-            font-size: 16px;
+            font-size: 28px;
             color: #fff;
-            font-weight: 500;
+            font-weight: 600;
         }
         
         .receipt-item-detail {
-            font-size: 13px;
+            font-size: 26px;
             color: #888;
-            margin-top: 3px;
+            margin-top: 6px;
         }
         
         .receipt-item-payment {
-            font-size: 12px;
+            font-size: 26px;
             color: #4fd1c5;
-            margin-top: 3px;
+            margin-top: 6px;
         }
         
         .receipt-item-right {
             text-align: right;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         
         .receipt-item-qty {
-            font-size: 14px;
+            font-size: 24px;
             color: #aaa;
         }
         
         .receipt-item-price {
-            font-size: 16px;
+            font-size: 28px;
             color: #fff;
             font-weight: 600;
         }
         
         .receipt-total {
             background: #252542;
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 15px;
+            border-radius: 16px;
+            padding: 25px;
+            margin-top: 20px;
         }
         
         .receipt-total-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
+            margin-bottom: 15px;
         }
         
         .receipt-total-row:last-child {
             margin-bottom: 0;
-            padding-top: 10px;
-            border-top: 1px solid #3a3a5a;
+            padding-top: 15px;
+            border-top: 2px solid #3a3a5a;
         }
         
         .receipt-total-label {
             color: #888;
-            font-size: 14px;
+            font-size: 24px;
         }
         
         .receipt-total-value {
             color: #fff;
-            font-size: 14px;
+            font-size: 24px;
             font-weight: 500;
         }
         
         .receipt-total-value.highlight {
             color: #4fd1c5;
-            font-size: 20px;
+            font-size: 36px;
             font-weight: 700;
+        }
+        
+        .receipt-payment-section {
+            margin-bottom: 20px;
+        }
+        
+        .receipt-payment-title {
+            font-size: 28px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #3a3a5a;
+        }
+        
+        .receipt-payment-detail {
+            font-size: 26px;
+            color: #4CAF50;
+            padding: 10px 0;
         }
         
         .receipt-footer {
             text-align: center;
-            padding-top: 20px;
-            border-top: 2px dashed #333;
-            margin-top: 20px;
+            padding-top: 30px;
+            border-top: 3px dashed #333;
+            margin-top: 30px;
         }
         
         .receipt-message {
-            font-size: 14px;
+            font-size: 28px;
             color: #888;
-            margin-bottom: 15px;
+            margin-bottom: 25px;
         }
         
         .countdown {
-            font-size: 16px;
+            font-size: 28px;
             color: #4fd1c5;
         }
         
         .countdown strong {
-            font-size: 24px;
+            font-size: 48px;
         }
     </style>
 </head>

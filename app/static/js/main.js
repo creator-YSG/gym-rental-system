@@ -1,5 +1,6 @@
 /**
  * 운동복 대여 시스템 - 키오스크 JavaScript (금액권/구독권 기반)
+ * 개선된 결제수단 선택 UI
  */
 
 // ========================================
@@ -9,10 +10,11 @@
 const AppState = {
     member: null,
     products: [],
+    // 장바구니: 같은 상품도 결제수단이 다르면 별도 항목으로 관리
+    // { product_id, name, size, category, price, quantity, device_uuid, payment: null | { type, id, name } }
     cart: [],
     currentCategory: null,
     paymentMethods: null,
-    selectedPayment: null,  // { type: 'subscription'|'voucher', id: ..., selections: [...] }
 };
 
 // ========================================
@@ -50,6 +52,17 @@ async function apiRequest(url, options = {}) {
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || '요청 처리 중 오류가 발생했습니다.');
     return data;
+}
+
+function getCategoryName(category) {
+    const names = { 'top': '상의', 'pants': '하의', 'towel': '수건', 'sweat_towel': '땀수건', 'other': '기타' };
+    return names[category] || category;
+}
+
+// 장바구니 아이템의 고유 키 생성 (상품ID + 결제수단)
+function getCartItemKey(item) {
+    if (!item.payment) return `${item.product_id}_unassigned`;
+    return `${item.product_id}_${item.payment.type}_${item.payment.id}`;
 }
 
 // ========================================
@@ -140,9 +153,10 @@ function initRentalPage() {
     
     updateMemberDisplay();
     loadProducts();
+    loadPaymentMethods();
     
     document.getElementById('logoutBtn')?.addEventListener('click', handleLogout);
-    document.getElementById('checkoutBtn')?.addEventListener('click', openPaymentModal);
+    document.getElementById('checkoutBtn')?.addEventListener('click', handleCheckout);
     document.getElementById('mypageBtn')?.addEventListener('click', openMypage);
     
     // 마이페이지 오버레이 클릭 시 닫기
@@ -162,7 +176,6 @@ function updateMemberDisplay() {
     }
     
     if (balanceEl && AppState.member) {
-        // 현재 탭의 카테고리 가격 기준으로 대여 가능 횟수 계산
         const currentCategory = AppState.currentCategory;
         const productInCategory = AppState.products.find(p => p.category === currentCategory);
         const price = productInCategory?.price || 1000;
@@ -210,6 +223,15 @@ async function loadProducts() {
     }
 }
 
+async function loadPaymentMethods() {
+    try {
+        const data = await apiRequest(`/api/payment-methods/${AppState.member.member_id}`);
+        AppState.paymentMethods = data;
+    } catch (error) {
+        console.error('결제 수단 로드 오류:', error);
+    }
+}
+
 function renderCategoryTabs() {
     const tabsContainer = document.getElementById('categoryTabs');
     if (!tabsContainer) return;
@@ -241,7 +263,7 @@ function selectCategory(category) {
         tab.classList.toggle('active', tab.dataset.category === category);
     });
     renderProducts();
-    updateMemberDisplay();  // 탭 전환 시 대여 가능 횟수 업데이트
+    updateMemberDisplay();
 }
 
 function renderProducts() {
@@ -251,8 +273,11 @@ function renderProducts() {
     const filtered = AppState.products.filter(p => p.category === AppState.currentCategory);
     
     grid.innerHTML = filtered.map(product => {
-        const inCart = AppState.cart.some(item => item.product_id === product.product_id);
-        const cartItem = AppState.cart.find(item => item.product_id === product.product_id);
+        // 해당 상품의 장바구니 총 수량 계산
+        const cartQuantity = AppState.cart
+            .filter(item => item.product_id === product.product_id)
+            .reduce((sum, item) => sum + item.quantity, 0);
+        const inCart = cartQuantity > 0;
         const isDisabled = !product.online || product.stock <= 0;
         
         let statusText = '';
@@ -262,7 +287,7 @@ function renderProducts() {
         return `
             <div class="product-card ${isDisabled ? 'disabled' : ''} ${inCart ? 'in-cart' : ''}"
                  data-product-id="${product.product_id}"
-                 ${isDisabled ? '' : 'onclick="openQuantityModal(\'' + product.product_id + '\')"'}>
+                 onclick="${isDisabled ? '' : `addToCart('${product.product_id}')`}">
                 <div class="product-size">${product.size || '-'}</div>
                 <div class="product-name">${product.name}</div>
                 <div class="product-price">${formatPrice(product.price || 1000)}</div>
@@ -270,79 +295,84 @@ function renderProducts() {
                     ${product.stock > 0 ? `재고 ${product.stock}개` : '재고 없음'}
                 </div>
                 ${statusText}
-                ${inCart ? `<div class="product-in-cart-badge">${cartItem.quantity}개 선택</div>` : ''}
+                ${inCart ? `<div class="product-in-cart-badge">${cartQuantity}개 선택</div>` : ''}
             </div>
         `;
     }).join('');
 }
 
-// 수량 선택 모달
-let selectedProduct = null;
-let selectedQuantity = 1;
+// ========================================
+// 장바구니 관리 (새로운 방식)
+// ========================================
 
-function openQuantityModal(productId) {
-    selectedProduct = AppState.products.find(p => p.product_id === productId);
-    if (!selectedProduct) return;
+function addToCart(productId) {
+    const product = AppState.products.find(p => p.product_id === productId);
+    if (!product) return;
     
-    const existingItem = AppState.cart.find(item => item.product_id === productId);
-    selectedQuantity = existingItem ? existingItem.quantity : 1;
+    // 장바구니 총 수량이 재고를 초과하는지 확인
+    const currentQuantity = AppState.cart
+        .filter(item => item.product_id === productId)
+        .reduce((sum, item) => sum + item.quantity, 0);
     
-    updateQuantityDisplay();
-    
-    const modal = document.getElementById('quantityModal');
-    const titleEl = document.getElementById('modalProductName');
-    const priceEl = document.getElementById('modalProductPrice');
-    
-    if (titleEl) titleEl.textContent = `${selectedProduct.name} (${selectedProduct.size})`;
-    if (priceEl) priceEl.textContent = formatPrice(selectedProduct.price || 1000);
-    if (modal) modal.classList.add('show');
-}
-
-function closeQuantityModal() {
-    const modal = document.getElementById('quantityModal');
-    if (modal) modal.classList.remove('show');
-    selectedProduct = null;
-}
-
-function changeQuantity(delta) {
-    if (!selectedProduct) return;
-    const newQty = selectedQuantity + delta;
-    if (newQty >= 1 && newQty <= selectedProduct.stock) {
-        selectedQuantity = newQty;
-        updateQuantityDisplay();
+    if (currentQuantity >= product.stock) {
+        showError('재고가 부족합니다.');
+        return;
     }
-}
-
-function updateQuantityDisplay() {
-    const valueEl = document.getElementById('qtyValue');
-    const minusBtn = document.getElementById('qtyMinus');
-    const plusBtn = document.getElementById('qtyPlus');
     
-    if (valueEl) valueEl.textContent = selectedQuantity;
-    if (minusBtn) minusBtn.disabled = selectedQuantity <= 1;
-    if (plusBtn && selectedProduct) plusBtn.disabled = selectedQuantity >= selectedProduct.stock;
-}
-
-function confirmQuantity() {
-    if (!selectedProduct) return;
+    // 미분류(payment=null) 아이템이 있으면 수량 증가, 없으면 새로 추가
+    const unassignedItem = AppState.cart.find(
+        item => item.product_id === productId && !item.payment
+    );
     
-    const existingIndex = AppState.cart.findIndex(item => item.product_id === selectedProduct.product_id);
-    
-    if (existingIndex >= 0) {
-        AppState.cart[existingIndex].quantity = selectedQuantity;
+    if (unassignedItem) {
+        unassignedItem.quantity += 1;
     } else {
         AppState.cart.push({
-            product_id: selectedProduct.product_id,
-            name: selectedProduct.name,
-            size: selectedProduct.size,
-            category: selectedProduct.category,
-            price: selectedProduct.price || 1000,
-            quantity: selectedQuantity,
-            device_uuid: selectedProduct.device_uuid,
+            product_id: product.product_id,
+            name: product.name,
+            size: product.size,
+            category: product.category,
+            price: product.price || 1000,
+            quantity: 1,
+            device_uuid: product.device_uuid,
+            payment: null,  // 미분류
         });
     }
     
-    closeQuantityModal();
+    renderProducts();
+    renderCart();
+}
+
+function changeCartQuantity(cartIndex, delta) {
+    const item = AppState.cart[cartIndex];
+    if (!item) return;
+    
+    const product = AppState.products.find(p => p.product_id === item.product_id);
+    if (!product) return;
+    
+    const newQty = item.quantity + delta;
+    
+    // 현재 상품의 총 장바구니 수량 계산 (변경될 아이템 제외)
+    const otherQuantity = AppState.cart
+        .filter((it, idx) => it.product_id === item.product_id && idx !== cartIndex)
+        .reduce((sum, it) => sum + it.quantity, 0);
+    
+    if (newQty <= 0) {
+        // 수량이 0 이하면 삭제
+        AppState.cart.splice(cartIndex, 1);
+    } else if (otherQuantity + newQty > product.stock) {
+        showError('재고가 부족합니다.');
+        return;
+    } else {
+        item.quantity = newQty;
+    }
+    
+    renderProducts();
+    renderCart();
+}
+
+function removeCartItem(cartIndex) {
+    AppState.cart.splice(cartIndex, 1);
     renderProducts();
     renderCart();
 }
@@ -356,21 +386,60 @@ function renderCart() {
     
     if (AppState.cart.length === 0) {
         cartItemsEl.innerHTML = '<div class="cart-empty">상품을 선택해주세요</div>';
-    } else {
-        cartItemsEl.innerHTML = AppState.cart.map((item, idx) => {
-            const paymentLabel = getPaymentLabel(item.payment);
-            return `
-                <div class="cart-item" onclick="openItemPaymentModal(${idx})">
-                    <div class="cart-item-info">
-                        <span class="cart-item-name">${item.name} (${item.size})</span>
-                        <span class="cart-item-qty">${item.quantity}개 × ${formatPrice(item.price)}</span>
-                        <span class="cart-item-payment ${item.payment ? 'set' : 'unset'}">${paymentLabel}</span>
-                    </div>
-                    <button class="cart-item-remove" onclick="event.stopPropagation(); removeFromCart('${item.product_id}')">×</button>
-                </div>
-            `;
-        }).join('');
+        if (cartTotalEl) cartTotalEl.innerHTML = `총 <strong>0원</strong>`;
+        if (checkoutBtn) checkoutBtn.disabled = true;
+        return;
     }
+    
+    // 섹션별 분류
+    const unassigned = [];
+    const subscription = [];
+    const voucher = [];
+    
+    AppState.cart.forEach((item, idx) => {
+        const itemWithIndex = { ...item, cartIndex: idx };
+        if (!item.payment) {
+            unassigned.push(itemWithIndex);
+        } else if (item.payment.type === 'subscription') {
+            subscription.push(itemWithIndex);
+        } else if (item.payment.type === 'voucher') {
+            voucher.push(itemWithIndex);
+        }
+    });
+    
+    let html = '';
+    
+    // 미분류 섹션
+    if (unassigned.length > 0) {
+        html += `<div class="cart-section">
+            <div class="cart-section-title">⚪ 미분류</div>
+            <div class="cart-section-items">
+                ${unassigned.map(item => renderCartItem(item, true)).join('')}
+            </div>
+        </div>`;
+    }
+    
+    // 구독권 섹션
+    if (subscription.length > 0) {
+        html += `<div class="cart-section">
+            <div class="cart-section-title">📋 구독권</div>
+            <div class="cart-section-items">
+                ${subscription.map(item => renderCartItem(item, false)).join('')}
+            </div>
+        </div>`;
+    }
+    
+    // 금액권 섹션
+    if (voucher.length > 0) {
+        html += `<div class="cart-section">
+            <div class="cart-section-title">💳 금액권</div>
+            <div class="cart-section-items">
+                ${voucher.map(item => renderCartItem(item, false)).join('')}
+            </div>
+        </div>`;
+    }
+    
+    cartItemsEl.innerHTML = html;
     
     const totalAmount = AppState.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
     
@@ -378,159 +447,54 @@ function renderCart() {
     if (checkoutBtn) checkoutBtn.disabled = AppState.cart.length === 0;
 }
 
+function renderCartItem(item, isUnassigned) {
+    const paymentLabel = getPaymentLabel(item.payment);
+    const product = AppState.products.find(p => p.product_id === item.product_id);
+    const maxQty = product?.stock || 10;
+    
+    return `
+        <div class="cart-item">
+            <div class="cart-item-name">${item.name} (${item.size})</div>
+            <div class="cart-item-controls">
+                <div class="cart-qty-controls">
+                    <button class="cart-qty-btn" onclick="changeCartQuantity(${item.cartIndex}, -1)">−</button>
+                    <span class="cart-qty-value">${item.quantity}</span>
+                    <button class="cart-qty-btn" onclick="changeCartQuantity(${item.cartIndex}, 1)">+</button>
+                </div>
+                <div class="cart-item-price">${formatPrice(item.price * item.quantity)}</div>
+                ${isUnassigned ? `
+                    <button class="cart-payment-btn unset" onclick="openItemPaymentModal(${item.cartIndex})">
+                        결제수단 선택
+                    </button>
+                ` : `
+                    <span class="cart-payment-label set">${paymentLabel}</span>
+                `}
+                <button class="cart-item-remove" onclick="removeCartItem(${item.cartIndex})">×</button>
+            </div>
+        </div>
+    `;
+}
+
 function getPaymentLabel(payment) {
     if (!payment) return '결제수단 선택';
     if (payment.type === 'subscription') return '구독권';
-    if (payment.type === 'voucher') return `금액권`;
+    if (payment.type === 'voucher') return payment.name || '금액권';
     return '결제수단 선택';
 }
 
-function removeFromCart(productId) {
-    AppState.cart = AppState.cart.filter(item => item.product_id !== productId);
-    renderProducts();
-    renderCart();
-}
-
 // ========================================
-// 결제 수단 선택 모달
-// ========================================
-
-async function openPaymentModal() {
-    if (AppState.cart.length === 0) {
-        showError('선택된 상품이 없습니다.');
-        return;
-    }
-    
-    showLoading(true);
-    
-    try {
-        // 모든 카테고리의 잔여 횟수를 가져옴 (category 파라미터 없이)
-        const data = await apiRequest(`/api/payment-methods/${AppState.member.member_id}`);
-        AppState.paymentMethods = data;
-        AppState.selectedPayment = null;
-        
-        renderPaymentOptions();
-        updatePaymentTotal();
-        
-        document.getElementById('paymentModal')?.classList.add('show');
-    } catch (error) {
-        console.error('결제 수단 로드 오류:', error);
-        showError('결제 수단을 불러오는데 실패했습니다.');
-    } finally {
-        showLoading(false);
-    }
-}
-
-function closePaymentModal() {
-    document.getElementById('paymentModal')?.classList.remove('show');
-}
-
-function renderPaymentOptions() {
-    const subSection = document.getElementById('subscriptionSection');
-    const subOptions = document.getElementById('subscriptionOptions');
-    const vchSection = document.getElementById('voucherSection');
-    const vchOptions = document.getElementById('voucherOptions');
-    
-    const { subscriptions, vouchers } = AppState.paymentMethods || {};
-    
-    // 장바구니 카테고리별 필요 수량 계산
-    const neededByCategory = {};
-    AppState.cart.forEach(item => {
-        neededByCategory[item.category] = (neededByCategory[item.category] || 0) + item.quantity;
-    });
-    
-    // 구독권 렌더링
-    if (subscriptions && subscriptions.length > 0) {
-        subSection.style.display = 'block';
-        subOptions.innerHTML = subscriptions.map(sub => {
-            const remainingByCat = sub.remaining_by_category || {};
-            
-            // 모든 카테고리에 대해 잔여 횟수 확인
-            let isAvailable = true;
-            let remainingInfo = [];
-            for (const [cat, needed] of Object.entries(neededByCategory)) {
-                const remaining = remainingByCat[cat] ?? 0;
-                if (remaining < needed) {
-                    isAvailable = false;
-                }
-                const catName = getCategoryName(cat);
-                remainingInfo.push(`${catName} ${remaining}회`);
-            }
-            
-            return `
-                <div class="payment-option ${isAvailable ? '' : 'disabled'}" 
-                     data-type="subscription" data-id="${sub.subscription_id}"
-                     onclick="${isAvailable ? `selectPayment('subscription', ${sub.subscription_id})` : ''}">
-                    <div class="payment-option-name">${sub.product_name}</div>
-                    <div class="payment-option-info">~${sub.valid_until?.split('T')[0] || ''}</div>
-                    <div class="payment-option-value">오늘 남은: ${remainingInfo.join(' / ')}</div>
-                </div>
-            `;
-        }).join('');
-    } else {
-        subSection.style.display = 'none';
-    }
-    
-    // 금액권 렌더링
-    if (vouchers && vouchers.length > 0) {
-        vchSection.style.display = 'block';
-        const totalAmount = AppState.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        const canSplit = vouchers.length >= 2;
-        
-        let vchHtml = vouchers.map(v => {
-            const isSelected = AppState.selectedPayment?.selections?.some(s => s.voucher_id === v.voucher_id);
-            const selectedAmount = AppState.selectedPayment?.selections?.find(s => s.voucher_id === v.voucher_id)?.amount || 0;
-            
-            return `
-                <div class="payment-option ${isSelected ? 'selected' : ''}" 
-                     data-type="voucher" data-id="${v.voucher_id}"
-                     onclick="selectVoucher(${v.voucher_id})">
-                    <div class="payment-option-name">${v.product_name}</div>
-                    <div class="payment-option-info">~${v.valid_until?.split('T')[0] || ''}</div>
-                    <div class="payment-option-value">잔액: ${formatPrice(v.remaining_amount)}</div>
-                    ${isSelected && canSplit ? `
-                        <div class="voucher-split-input" onclick="event.stopPropagation()">
-                            <label>사용 금액:</label>
-                            <input type="number" value="${selectedAmount}" min="0" max="${v.remaining_amount}"
-                                   onchange="updateVoucherAmount(${v.voucher_id}, this.value)" />원
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }).join('');
-        
-        vchOptions.innerHTML = vchHtml;
-    } else {
-        vchSection.style.display = 'none';
-    }
-}
-
-function selectPayment(type, id) {
-    // 구독권 선택 (전체 결제)
-    AppState.selectedPayment = { type, id, selections: [] };
-    
-    document.querySelectorAll('.payment-option').forEach(opt => {
-        opt.classList.remove('selected');
-    });
-    
-    const selected = document.querySelector(`.payment-option[data-type="${type}"][data-id="${id}"]`);
-    if (selected) selected.classList.add('selected');
-    
-    updatePaymentTotal();
-}
-
-// ========================================
-// 개별 상품별 결제 수단 선택
+// 개별 상품 결제수단 선택 모달
 // ========================================
 
 let currentEditingCartIndex = -1;
+let paymentModalQuantity = 1;
 
 async function openItemPaymentModal(cartIndex) {
     currentEditingCartIndex = cartIndex;
     const item = AppState.cart[cartIndex];
     if (!item) return;
     
-    // 결제 수단 로드 (아직 로드 안 됐으면)
+    // 결제 수단 로드
     if (!AppState.paymentMethods) {
         try {
             const data = await apiRequest(`/api/payment-methods/${AppState.member.member_id}`);
@@ -541,14 +505,33 @@ async function openItemPaymentModal(cartIndex) {
         }
     }
     
+    paymentModalQuantity = item.quantity;
+    
     const modal = document.getElementById('itemPaymentModal');
     if (!modal) return;
     
+    renderItemPaymentModal(item);
+    modal.classList.add('show');
+}
+
+function renderItemPaymentModal(item) {
     const itemInfoEl = document.getElementById('itemPaymentItemInfo');
     const optionsEl = document.getElementById('itemPaymentOptions');
     
     if (itemInfoEl) {
-        itemInfoEl.innerHTML = `<strong>${item.name} (${item.size})</strong> - ${item.quantity}개 × ${formatPrice(item.price)}`;
+        itemInfoEl.innerHTML = `
+            <div class="item-payment-product">
+                <strong>${item.name} (${item.size})</strong>
+                <span class="item-payment-unit-price">${formatPrice(item.price)}/개</span>
+            </div>
+            <div class="item-payment-qty-selector">
+                <span>적용 수량:</span>
+                <button class="modal-qty-btn" onclick="changePaymentModalQty(-1)">−</button>
+                <span class="modal-qty-value" id="paymentModalQtyValue">${paymentModalQuantity}</span>
+                <button class="modal-qty-btn" onclick="changePaymentModalQty(1)">+</button>
+                <span>/ ${item.quantity}개</span>
+            </div>
+        `;
     }
     
     const { subscriptions, vouchers } = AppState.paymentMethods || {};
@@ -556,281 +539,704 @@ async function openItemPaymentModal(cartIndex) {
     
     // 구독권 옵션
     if (subscriptions && subscriptions.length > 0) {
-        const sub = subscriptions[0];
-        const remaining = sub.remaining_by_category?.[item.category] ?? 0;
-        const isAvailable = remaining >= item.quantity;
-        
-        optionsHtml += `
-            <div class="item-payment-option ${isAvailable ? '' : 'disabled'}" 
-                 data-type="subscription" data-id="${sub.subscription_id}"
-                 onclick="${isAvailable ? `selectItemPayment('subscription', ${sub.subscription_id})` : ''}">
-                <span class="option-name">구독권</span>
-                <span class="option-info">${getCategoryName(item.category)} 남은 횟수: ${remaining}회</span>
-            </div>
-        `;
-    }
-    
-    // 금액권 옵션
-    if (vouchers && vouchers.length > 0) {
-        vouchers.forEach(v => {
-            const itemTotal = item.price * item.quantity;
-            const isAvailable = v.remaining_amount >= itemTotal;
+        subscriptions.forEach(sub => {
+            const remaining = sub.remaining_by_category?.[item.category] ?? 0;
+            const isAvailable = remaining >= paymentModalQuantity;
+            
             optionsHtml += `
-                <div class="item-payment-option ${isAvailable ? '' : 'partial'}" 
-                     data-type="voucher" data-id="${v.voucher_id}"
-                     onclick="selectItemPayment('voucher', ${v.voucher_id})">
-                    <span class="option-name">${v.product_name}</span>
-                    <span class="option-info">잔액: ${formatPrice(v.remaining_amount)}</span>
+                <div class="item-payment-option ${isAvailable ? '' : 'disabled'}" 
+                     onclick="${isAvailable ? `selectItemPayment('subscription', ${sub.subscription_id}, '구독권')` : ''}">
+                    <div class="option-left">
+                        <span class="option-icon">📋</span>
+                        <div class="option-details">
+                            <span class="option-name">${sub.product_name}</span>
+                            <span class="option-info">${getCategoryName(item.category)} 남은 횟수: ${remaining}회</span>
+                        </div>
+                    </div>
+                    ${!isAvailable ? '<span class="option-disabled-text">횟수 부족</span>' : ''}
                 </div>
             `;
         });
     }
     
-    if (optionsEl) optionsEl.innerHTML = optionsHtml;
+    // 금액권 옵션
+    if (vouchers && vouchers.length > 0) {
+        vouchers.forEach(v => {
+            const itemTotal = item.price * paymentModalQuantity;
+            const isAvailable = v.remaining_amount >= itemTotal;
+            
+            optionsHtml += `
+                <div class="item-payment-option ${isAvailable ? '' : 'partial'}" 
+                     onclick="selectItemPayment('voucher', ${v.voucher_id}, '${v.product_name}')">
+                    <div class="option-left">
+                        <span class="option-icon">💳</span>
+                        <div class="option-details">
+                            <span class="option-name">${v.product_name}</span>
+                            <span class="option-info">잔액: ${formatPrice(v.remaining_amount)}</span>
+                        </div>
+                    </div>
+                    ${!isAvailable ? '<span class="option-warning-text">잔액 부족 (부분 사용)</span>' : ''}
+                </div>
+            `;
+        });
+    }
     
-    modal.classList.add('show');
+    if (!optionsHtml) {
+        optionsHtml = '<div class="no-payment-options">사용 가능한 결제 수단이 없습니다.</div>';
+    }
+    
+    if (optionsEl) optionsEl.innerHTML = optionsHtml;
+}
+
+function changePaymentModalQty(delta) {
+    const item = AppState.cart[currentEditingCartIndex];
+    if (!item) return;
+    
+    const newQty = paymentModalQuantity + delta;
+    if (newQty >= 1 && newQty <= item.quantity) {
+        paymentModalQuantity = newQty;
+        
+        const qtyValueEl = document.getElementById('paymentModalQtyValue');
+        if (qtyValueEl) qtyValueEl.textContent = paymentModalQuantity;
+        
+        // 옵션 목록 다시 렌더링 (수량에 따라 가용 여부 변경)
+        renderItemPaymentModal(item);
+    }
+}
+
+function selectItemPayment(type, id, name) {
+    if (currentEditingCartIndex < 0) return;
+    
+    const item = AppState.cart[currentEditingCartIndex];
+    if (!item) return;
+    
+    // 선택한 수량이 현재 아이템의 전체 수량인 경우
+    if (paymentModalQuantity === item.quantity) {
+        // 전체 아이템에 결제수단 적용
+        item.payment = { type, id, name };
+    } else {
+        // 일부 수량만 분리
+        const remainingQty = item.quantity - paymentModalQuantity;
+        
+        // 기존 아이템 수량 감소
+        item.quantity = remainingQty;
+        
+        // 새 아이템 추가 (선택된 결제수단으로)
+        AppState.cart.push({
+            product_id: item.product_id,
+            name: item.name,
+            size: item.size,
+            category: item.category,
+            price: item.price,
+            quantity: paymentModalQuantity,
+            device_uuid: item.device_uuid,
+            payment: { type, id, name },
+        });
+    }
+    
+    renderProducts();
+    renderCart();
+    closeItemPaymentModal();
 }
 
 function closeItemPaymentModal() {
     document.getElementById('itemPaymentModal')?.classList.remove('show');
     currentEditingCartIndex = -1;
+    paymentModalQuantity = 1;
 }
 
-function selectItemPayment(type, id) {
-    if (currentEditingCartIndex < 0) return;
-    
-    AppState.cart[currentEditingCartIndex].payment = { type, id };
-    renderCart();
-    closeItemPaymentModal();
-}
+// ========================================
+// 대여하기 버튼 처리
+// ========================================
 
-function selectVoucher(voucherId) {
-    const voucher = AppState.paymentMethods.vouchers.find(v => v.voucher_id === voucherId);
-    if (!voucher) return;
-    
-    const totalAmount = AppState.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
-    // 금액권 선택/토글
-    if (!AppState.selectedPayment || AppState.selectedPayment.type !== 'voucher') {
-        AppState.selectedPayment = { type: 'voucher', selections: [] };
-    }
-    
-    const existingIdx = AppState.selectedPayment.selections.findIndex(s => s.voucher_id === voucherId);
-    
-    if (existingIdx >= 0) {
-        // 이미 선택됨 -> 해제
-        AppState.selectedPayment.selections.splice(existingIdx, 1);
-    } else {
-        // 새로 추가
-        const currentTotal = AppState.selectedPayment.selections.reduce((s, x) => s + x.amount, 0);
-        const remaining = totalAmount - currentTotal;
-        const useAmount = Math.min(voucher.remaining_amount, remaining);
-        
-        if (useAmount > 0) {
-            AppState.selectedPayment.selections.push({
-                voucher_id: voucherId,
-                amount: useAmount,
-            });
-        }
-    }
-    
-    // 구독권 선택 해제
-    document.querySelectorAll('.payment-option[data-type="subscription"]').forEach(opt => {
-        opt.classList.remove('selected');
-    });
-    
-    // 금액권 쪼개기 UI가 있으면 전체 다시 렌더링
-    renderPaymentOptions();
-    updatePaymentTotal();
-}
-
-function updateVoucherAmount(voucherId, value) {
-    if (!AppState.selectedPayment || AppState.selectedPayment.type !== 'voucher') return;
-    
-    const amount = parseInt(value) || 0;
-    const voucher = AppState.paymentMethods.vouchers.find(v => v.voucher_id === voucherId);
-    if (!voucher) return;
-    
-    // 금액 범위 제한
-    const validAmount = Math.max(0, Math.min(amount, voucher.remaining_amount));
-    
-    const selection = AppState.selectedPayment.selections.find(s => s.voucher_id === voucherId);
-    if (selection) {
-        selection.amount = validAmount;
-    }
-    
-    updatePaymentTotal();
-}
-
-function updatePaymentTotal() {
-    const totalAmountEl = document.getElementById('paymentTotalAmount');
-    const selectedAmountEl = document.getElementById('paymentSelectedAmount');
-    const confirmBtn = document.getElementById('confirmPaymentBtn');
-    
-    const totalAmount = AppState.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
-    if (totalAmountEl) totalAmountEl.textContent = formatPrice(totalAmount);
-    
-    let selectedAmount = 0;
-    let canConfirm = false;
-    
-    if (AppState.selectedPayment) {
-        if (AppState.selectedPayment.type === 'subscription') {
-            selectedAmount = totalAmount;  // 구독권은 전액 커버
-            canConfirm = true;
-        } else if (AppState.selectedPayment.type === 'voucher') {
-            selectedAmount = AppState.selectedPayment.selections.reduce((s, x) => s + x.amount, 0);
-            canConfirm = selectedAmount >= totalAmount;
-        }
-    }
-    
-    if (selectedAmountEl) selectedAmountEl.textContent = formatPrice(selectedAmount);
-    if (confirmBtn) confirmBtn.disabled = !canConfirm;
-}
-
-async function confirmPayment() {
-    // 개별 상품별 결제 수단이 설정되어 있는지 확인
-    const hasItemPayments = AppState.cart.some(item => item.payment);
-    
-    if (!hasItemPayments && !AppState.selectedPayment) {
-        showError('결제 수단을 선택해주세요.');
+async function handleCheckout() {
+    if (AppState.cart.length === 0) {
+        showError('선택된 상품이 없습니다.');
         return;
     }
     
+    const { subscriptions, vouchers } = AppState.paymentMethods || {};
+    const totalPaymentMethods = (subscriptions?.length || 0) + (vouchers?.length || 0);
+    
+    // 결제수단이 1개만 있으면 자동 배정 후 바로 대여
+    if (totalPaymentMethods === 1) {
+        autoAssignSinglePaymentAndRent();
+        return;
+    }
+    
+    // 결제수단이 여러 개면 결제 확인 모달 표시
+    openPaymentConfirmModal();
+}
+
+// 결제수단 1개일 때 자동 배정 후 대여
+async function autoAssignSinglePaymentAndRent() {
+    const { subscriptions, vouchers } = AppState.paymentMethods || {};
+    
+    // 구독권 1개만 있는 경우
+    if (subscriptions?.length === 1 && (!vouchers || vouchers.length === 0)) {
+        const sub = subscriptions[0];
+        // 구독권으로 가능한 것만 배정, 나머지는 처리 불가
+        AppState.cart.forEach(item => {
+            const remaining = sub.remaining_by_category?.[item.category] || 0;
+            if (remaining >= item.quantity) {
+                item.payment = { type: 'subscription', id: sub.subscription_id, name: '구독권' };
+            }
+        });
+        
+        // 미배정 아이템 있으면 오류
+        const unassigned = AppState.cart.filter(item => !item.payment);
+        if (unassigned.length > 0) {
+            showError('구독권 잔여 횟수가 부족합니다.');
+            return;
+        }
+    }
+    // 금액권 1개만 있는 경우
+    else if (vouchers?.length === 1 && (!subscriptions || subscriptions.length === 0)) {
+        const voucher = vouchers[0];
+        const totalAmount = AppState.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+        
+        if (voucher.remaining_amount < totalAmount) {
+            showError(`금액권 잔액이 부족합니다. (잔액: ${formatPrice(voucher.remaining_amount)})`);
+            return;
+        }
+        
+        AppState.cart.forEach(item => {
+            item.payment = { type: 'voucher', id: voucher.voucher_id, name: voucher.product_name };
+        });
+    }
+    
+    await processRental();
+}
+
+// ========================================
+// 결제 확인 모달 (구독권 자동배정 + 금액권 쪼개기)
+// ========================================
+
+function openPaymentConfirmModal() {
+    if (!AppState.paymentMethods) {
+        showError('결제 수단을 불러오는 중입니다. 잠시 후 다시 시도해주세요.');
+        return;
+    }
+    
+    // 다른 모달이 열려있으면 먼저 닫기
+    closeItemPaymentModal();
+    closeNumpad();
+    
+    const modal = document.getElementById('bulkPaymentModal');
+    if (!modal) return;
+    
+    // 구독권 자동 배정 계산
+    const { subscriptions, vouchers } = AppState.paymentMethods;
+    const cartItems = [...AppState.cart];
+    
+    // 구독권으로 처리할 아이템과 금액권으로 처리할 아이템 분리
+    const subscriptionAssignments = []; // {item, subscription}
+    const voucherItems = []; // 금액권으로 결제할 아이템
+    
+    // 구독권 잔여 횟수 복사 (계산용)
+    const subRemaining = {};
+    subscriptions?.forEach(sub => {
+        subRemaining[sub.subscription_id] = { ...sub.remaining_by_category };
+    });
+    
+    // 각 아이템에 대해 구독권 우선 배정
+    cartItems.forEach(item => {
+        let assigned = false;
+        
+        // 구독권 확인 (첫 번째 가능한 구독권에 배정)
+        for (const sub of (subscriptions || [])) {
+            const remaining = subRemaining[sub.subscription_id]?.[item.category] || 0;
+            if (remaining >= item.quantity) {
+                subscriptionAssignments.push({
+                    item: item,
+                    subscription: sub,
+                });
+                subRemaining[sub.subscription_id][item.category] -= item.quantity;
+                assigned = true;
+                break;
+            }
+        }
+        
+        if (!assigned) {
+            voucherItems.push(item);
+        }
+    });
+    
+    // 금액권 결제 필요 금액
+    const voucherTotalAmount = voucherItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    
+    // 모달 렌더링
+    renderPaymentConfirmModal(subscriptionAssignments, voucherItems, voucherTotalAmount, vouchers);
+    modal.classList.add('show');
+}
+
+function renderPaymentConfirmModal(subscriptionAssignments, voucherItems, voucherTotalAmount, vouchers) {
+    const contentEl = document.getElementById('bulkPaymentContent');
+    if (!contentEl) return;
+    
+    let html = '';
+    
+    // 구독권 자동 적용 섹션
+    if (subscriptionAssignments.length > 0) {
+        html += `
+            <div class="payment-section">
+                <div class="payment-section-title">📋 구독권 자동 적용</div>
+                <div class="subscription-auto-items">
+        `;
+        
+        // 구독권별로 그룹화
+        const subGroups = {};
+        subscriptionAssignments.forEach(({ item, subscription }) => {
+            const key = subscription.subscription_id;
+            if (!subGroups[key]) {
+                subGroups[key] = { subscription, items: [] };
+            }
+            subGroups[key].items.push(item);
+        });
+        
+        for (const [subId, group] of Object.entries(subGroups)) {
+            html += `
+                <div class="subscription-group">
+                    <div class="subscription-name">${group.subscription.product_name}</div>
+                    <div class="subscription-items">
+                        ${group.items.map(item => `${item.name}(${item.size}) ${item.quantity}개`).join(', ')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        html += `</div></div>`;
+    }
+    
+    // 금액권 결제 섹션
+    if (voucherTotalAmount > 0) {
+        html += `
+            <div class="payment-section">
+                <div class="payment-section-title">💳 금액권 결제 (${formatPrice(voucherTotalAmount)})</div>
+                <div class="voucher-items-summary">
+                    ${voucherItems.map(item => `${item.name}(${item.size}) ${item.quantity}개 = ${formatPrice(item.price * item.quantity)}`).join('<br>')}
+                </div>
+                <div class="voucher-split-inputs" id="voucherSplitInputs">
+        `;
+        
+        // 금액권별 입력 필드 (유효기간 임박 순 정렬)
+        const sortedVouchers = [...(vouchers || [])].sort((a, b) => {
+            return new Date(a.valid_until) - new Date(b.valid_until);
+        });
+        
+        sortedVouchers.forEach((v, idx) => {
+            const isExpiringSoon = new Date(v.valid_until) < new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            const defaultAmount = idx === 0 ? Math.min(v.remaining_amount, voucherTotalAmount) : 0;
+            
+            html += `
+                <div class="voucher-input-row">
+                    <div class="voucher-input-info">
+                        <span class="voucher-input-name">${v.product_name}</span>
+                        <div class="voucher-input-meta">
+                            <span class="voucher-input-balance">잔액: ${formatPrice(v.remaining_amount)}</span>
+                            ${isExpiringSoon ? '<span class="voucher-expiring">⚠️ 곧 만료</span>' : ''}
+                        </div>
+                    </div>
+                    <div class="voucher-input-field">
+                        <input type="text" 
+                            id="voucherAmount_${v.voucher_id}" 
+                            class="voucher-amount-input" 
+                            data-voucher-id="${v.voucher_id}"
+                            data-max="${v.remaining_amount}"
+                            data-voucher-name="${v.product_name}"
+                            value="${defaultAmount}"
+                            readonly>
+                        <span class="voucher-input-unit">원</span>
+                        <button type="button" class="voucher-use-all-btn" data-voucher-id="${v.voucher_id}" data-max="${v.remaining_amount}">전액</button>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `
+                </div>
+                <div class="voucher-total-row">
+                    <span>배분 합계:</span>
+                    <span id="voucherSplitTotal">0원</span>
+                    <span>/ ${formatPrice(voucherTotalAmount)}</span>
+                    <span id="voucherSplitStatus" class="split-status"></span>
+                </div>
+            </div>
+        `;
+    }
+    
+    // 버튼 (금액권이 없으면 바로 활성화)
+    const btnDisabled = voucherTotalAmount > 0 ? 'disabled' : '';
+    html += `
+        <div class="payment-modal-buttons">
+            <button class="modal-btn cancel" onclick="closeBulkPaymentModal()">취소</button>
+            <button class="modal-btn confirm" id="confirmPaymentBtn" onclick="confirmPaymentAndRent()" ${btnDisabled}>대여하기</button>
+        </div>
+    `;
+    
+    contentEl.innerHTML = html;
+    
+    // 저장 (나중에 processRental에서 사용)
+    AppState.pendingSubscriptionAssignments = subscriptionAssignments;
+    AppState.pendingVoucherItems = voucherItems;
+    AppState.pendingVoucherTotal = voucherTotalAmount;
+    
+    // 초기 합계 업데이트 (금액권이 있을 때만)
+    if (voucherTotalAmount > 0) {
+        updateVoucherTotal();
+    }
+}
+
+function updateVoucherTotal() {
+    const inputs = document.querySelectorAll('.voucher-amount-input');
+    let total = 0;
+    
+    inputs.forEach(input => {
+        const val = parseInt(input.value) || 0;
+        const max = parseInt(input.dataset.max) || 0;
+        
+        // 최대값 제한
+        if (val > max) {
+            input.value = max;
+            total += max;
+        } else {
+            total += val;
+        }
+    });
+    
+    const totalEl = document.getElementById('voucherSplitTotal');
+    const statusEl = document.getElementById('voucherSplitStatus');
+    const confirmBtn = document.getElementById('confirmPaymentBtn');
+    const required = AppState.pendingVoucherTotal || 0;
+    
+    if (totalEl) totalEl.textContent = formatPrice(total);
+    
+    if (statusEl && confirmBtn) {
+        if (total === required) {
+            statusEl.textContent = '✓';
+            statusEl.className = 'split-status ok';
+            confirmBtn.disabled = false;
+        } else if (total < required) {
+            statusEl.textContent = `(${formatPrice(required - total)} 부족)`;
+            statusEl.className = 'split-status error';
+            confirmBtn.disabled = true;
+        } else {
+            statusEl.textContent = `(${formatPrice(total - required)} 초과)`;
+            statusEl.className = 'split-status error';
+            confirmBtn.disabled = true;
+        }
+    }
+}
+
+function useAllVoucherBalance(voucherId, maxAmount) {
+    const input = document.getElementById(`voucherAmount_${voucherId}`);
+    if (input) {
+        // 남은 필요 금액 계산
+        const inputs = document.querySelectorAll('.voucher-amount-input');
+        let currentTotal = 0;
+        inputs.forEach(inp => {
+            if (inp.id !== `voucherAmount_${voucherId}`) {
+                currentTotal += parseInt(inp.value) || 0;
+            }
+        });
+        
+        const required = AppState.pendingVoucherTotal || 0;
+        const remaining = required - currentTotal;
+        
+        input.value = Math.min(maxAmount, Math.max(0, remaining));
+        updateVoucherTotal();
+    }
+}
+
+async function confirmPaymentAndRent() {
+    // 구독권 배정 적용
+    const subAssignments = AppState.pendingSubscriptionAssignments || [];
+    subAssignments.forEach(({ item, subscription }) => {
+        const cartItem = AppState.cart.find(ci => 
+            ci.product_id === item.product_id && ci.size === item.size
+        );
+        if (cartItem) {
+            cartItem.payment = {
+                type: 'subscription',
+                id: subscription.subscription_id,
+                name: '구독권'
+            };
+        }
+    });
+    
+    // 금액권 배정 적용 (쪼개기 정보 포함)
+    const voucherItems = AppState.pendingVoucherItems || [];
+    const inputs = document.querySelectorAll('.voucher-amount-input');
+    
+    // voucher_selections 생성
+    const voucherSelections = [];
+    inputs.forEach(input => {
+        const amount = parseInt(input.value) || 0;
+        if (amount > 0) {
+            voucherSelections.push({
+                voucher_id: parseInt(input.dataset.voucherId),
+                amount: amount
+            });
+        }
+    });
+    
+    // 금액권 아이템에 payment 정보 설정 (첫 번째 금액권으로)
+    if (voucherSelections.length > 0) {
+        voucherItems.forEach(item => {
+            const cartItem = AppState.cart.find(ci => 
+                ci.product_id === item.product_id && ci.size === item.size && !ci.payment
+            );
+            if (cartItem) {
+                cartItem.payment = {
+                    type: 'voucher',
+                    id: voucherSelections[0].voucher_id,
+                    name: '금액권'
+                };
+            }
+        });
+    }
+    
+    // 쪼개기 정보 저장
+    AppState.voucherSelections = voucherSelections;
+    
+    closeBulkPaymentModal();
+    await processRentalWithSplit();
+}
+
+// 기존 openBulkPaymentModal은 호환성 위해 유지
+function openBulkPaymentModal() {
+    openPaymentConfirmModal();
+}
+
+function renderBulkPaymentModal(unassignedItems) {
+    const contentEl = document.getElementById('bulkPaymentContent');
+    if (!contentEl) return;
+    
+    const totalAmount = unassignedItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const totalQty = unassignedItems.reduce((sum, item) => sum + item.quantity, 0);
+    
+    // 카테고리별 필요 수량 계산
+    const neededByCategory = {};
+    unassignedItems.forEach(item => {
+        neededByCategory[item.category] = (neededByCategory[item.category] || 0) + item.quantity;
+    });
+    
+    const { subscriptions, vouchers } = AppState.paymentMethods || {};
+    
+    let html = `
+        <div class="bulk-payment-summary">
+            <div class="bulk-summary-title">미분류 상품 ${totalQty}개</div>
+            <div class="bulk-summary-amount">총 ${formatPrice(totalAmount)}</div>
+            <div class="bulk-summary-items">
+                ${unassignedItems.map(item => `${item.name}(${item.size}) ${item.quantity}개`).join(', ')}
+            </div>
+        </div>
+        <div class="bulk-payment-options">
+    `;
+    
+    // 구독권 옵션
+    if (subscriptions && subscriptions.length > 0) {
+        subscriptions.forEach(sub => {
+            const remainingByCat = sub.remaining_by_category || {};
+            
+            // 모든 카테고리에 대해 잔여 횟수 확인
+            let isAvailable = true;
+            let remainingInfo = [];
+            for (const [cat, needed] of Object.entries(neededByCategory)) {
+                const remaining = remainingByCat[cat] ?? 0;
+                if (remaining < needed) {
+                    isAvailable = false;
+                }
+                remainingInfo.push(`${getCategoryName(cat)} ${remaining}회`);
+            }
+            
+            html += `
+                <div class="bulk-payment-option ${isAvailable ? '' : 'disabled'}" 
+                     onclick="${isAvailable ? `applyBulkPayment('subscription', ${sub.subscription_id}, '구독권')` : ''}">
+                    <div class="option-left">
+                        <span class="option-icon">📋</span>
+                        <div class="option-details">
+                            <span class="option-name">${sub.product_name}</span>
+                            <span class="option-info">남은 횟수: ${remainingInfo.join(' / ')}</span>
+                        </div>
+                    </div>
+                    ${!isAvailable ? '<span class="option-disabled-text">횟수 부족</span>' : ''}
+                </div>
+            `;
+        });
+    }
+    
+    // 금액권 옵션
+    if (vouchers && vouchers.length > 0) {
+        vouchers.forEach(v => {
+            const isAvailable = v.remaining_amount >= totalAmount;
+            
+            html += `
+                <div class="bulk-payment-option ${isAvailable ? '' : 'partial'}" 
+                     onclick="applyBulkPayment('voucher', ${v.voucher_id}, '${v.product_name}')">
+                    <div class="option-left">
+                        <span class="option-icon">💳</span>
+                        <div class="option-details">
+                            <span class="option-name">${v.product_name}</span>
+                            <span class="option-info">잔액: ${formatPrice(v.remaining_amount)}</span>
+                        </div>
+                    </div>
+                    ${!isAvailable ? '<span class="option-warning-text">잔액 부족</span>' : ''}
+                </div>
+            `;
+        });
+    }
+    
+    html += '</div>';
+    
+    contentEl.innerHTML = html;
+}
+
+function applyBulkPayment(type, id, name) {
+    // 모든 미분류 아이템에 결제수단 적용
+    AppState.cart.forEach(item => {
+        if (!item.payment) {
+            item.payment = { type, id, name };
+        }
+    });
+    
+    closeBulkPaymentModal();
+    renderCart();
+    
+    // 바로 대여 처리
+    processRental();
+}
+
+function closeBulkPaymentModal() {
+    document.getElementById('bulkPaymentModal')?.classList.remove('show');
+}
+
+// ========================================
+// 대여 처리
+// ========================================
+
+async function processRental() {
+    // 기본 처리 (쪼개기 없이)
+    AppState.voucherSelections = null;
+    await processRentalWithSplit();
+}
+
+async function processRentalWithSplit() {
     showLoading(true);
-    closePaymentModal();
     
     try {
-        let result;
+        // 구독권 아이템과 금액권 아이템 분리
+        const subscriptionItems = AppState.cart.filter(item => item.payment?.type === 'subscription');
+        const voucherItems = AppState.cart.filter(item => item.payment?.type === 'voucher');
         
-        // 개별 상품별 결제 수단이 설정된 경우
-        if (hasItemPayments) {
-            result = await processItemPayments();
-        } else if (AppState.selectedPayment.type === 'subscription') {
-            result = await apiRequest('/api/rental/subscription', {
+        let allResults = { 
+            success: true, 
+            payment_type: 'mixed', 
+            total_amount: 0,
+            subscription_usage: [],
+            voucher_details: []
+        };
+        
+        // 구독권 결제 처리
+        if (subscriptionItems.length > 0) {
+            // 구독권 ID별로 그룹화
+            const subGroups = {};
+            subscriptionItems.forEach(item => {
+                const subId = item.payment.id;
+                if (!subGroups[subId]) subGroups[subId] = [];
+                subGroups[subId].push(item);
+            });
+            
+            for (const [subId, items] of Object.entries(subGroups)) {
+                const result = await apiRequest('/api/rental/subscription', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        member_id: AppState.member.member_id,
+                        subscription_id: parseInt(subId),
+                        items: items.map(item => ({
+                            product_id: item.product_id,
+                            quantity: item.quantity,
+                            device_uuid: item.device_uuid,
+                        })),
+                    }),
+                });
+                
+                if (!result.success) {
+                    throw new Error(result.message || '구독권 대여 처리 실패');
+                }
+                
+                // 구독권 사용 내역 저장
+                allResults.subscription_usage.push({
+                    items: items.map(i => ({ name: i.name, size: i.size, quantity: i.quantity, category: i.category }))
+                });
+            }
+        }
+        
+        // 금액권 결제 처리
+        if (voucherItems.length > 0) {
+            // 쪼개기 정보가 있으면 사용, 없으면 기존 방식
+            let selections;
+            if (AppState.voucherSelections && AppState.voucherSelections.length > 0) {
+                selections = AppState.voucherSelections;
+            } else {
+                // 금액권별로 그룹화 및 금액 계산 (기존 방식)
+                const voucherGroups = {};
+                voucherItems.forEach(item => {
+                    const vid = item.payment.id;
+                    if (!voucherGroups[vid]) voucherGroups[vid] = { items: [], amount: 0 };
+                    voucherGroups[vid].items.push(item);
+                    voucherGroups[vid].amount += item.price * item.quantity;
+                });
+                
+                selections = Object.entries(voucherGroups).map(([vid, data]) => ({
+                    voucher_id: parseInt(vid),
+                    amount: data.amount,
+                }));
+            }
+            
+            const result = await apiRequest('/api/rental/voucher', {
                 method: 'POST',
                 body: JSON.stringify({
                     member_id: AppState.member.member_id,
-                    subscription_id: AppState.selectedPayment.id,
-                    items: AppState.cart.map(item => ({
+                    items: voucherItems.map(item => ({
                         product_id: item.product_id,
                         quantity: item.quantity,
                         device_uuid: item.device_uuid,
                     })),
+                    voucher_selections: selections,
                 }),
             });
-        } else {
-            result = await apiRequest('/api/rental/voucher', {
-                method: 'POST',
-                body: JSON.stringify({
-                    member_id: AppState.member.member_id,
-                    items: AppState.cart.map(item => ({
-                        product_id: item.product_id,
-                        quantity: item.quantity,
-                        device_uuid: item.device_uuid,
-                    })),
-                    voucher_selections: AppState.selectedPayment.selections,
-                }),
-            });
+            
+            if (!result.success) {
+                throw new Error(result.message || '금액권 대여 처리 실패');
+            }
+            allResults.total_amount += result.total_amount || 0;
+            allResults.voucher_details = selections; // 쪼개기 정보 저장
         }
         
-        if (result.success) {
-            const totalAmount = AppState.cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            
-            // 결제 수단별 상세 정보 생성
-            const itemsWithPayment = AppState.cart.map(item => ({
-                ...item,
-                payment_type: item.payment?.type || AppState.selectedPayment?.type,
-            }));
-            
-            sessionStorage.setItem('rentalResult', JSON.stringify({
-                items: itemsWithPayment,
-                payment_type: result.payment_type || 'mixed',
-                total_amount: result.total_amount || totalAmount,
-                voucher_details: result.voucher_details || AppState.selectedPayment?.selections?.map(s => {
-                    const v = AppState.paymentMethods?.vouchers?.find(v => v.voucher_id === s.voucher_id);
-                    return { name: v?.product_name, amount: s.amount };
-                }),
-            }));
-            window.location.href = '/complete';
-        } else {
-            showError(result.message || '대여 처리에 실패했습니다.');
-        }
+        // 결과 저장 및 완료 페이지로 이동
+        const itemsWithPayment = AppState.cart.map(item => ({
+            ...item,
+            payment_type: item.payment?.type,
+        }));
+        
+        sessionStorage.setItem('rentalResult', JSON.stringify({
+            items: itemsWithPayment,
+            payment_type: allResults.payment_type,
+            total_amount: allResults.total_amount,
+            subscription_usage: allResults.subscription_usage,
+            voucher_details: allResults.voucher_details,
+        }));
+        
+        window.location.href = '/complete';
+        
     } catch (error) {
         console.error('대여 오류:', error);
         showError(error.message || '대여 처리 중 오류가 발생했습니다.');
     } finally {
         showLoading(false);
+        AppState.voucherSelections = null;
     }
-}
-
-// 개별 상품별 결제 처리
-async function processItemPayments() {
-    // 구독권 아이템과 금액권 아이템 분리
-    const subscriptionItems = AppState.cart.filter(item => item.payment?.type === 'subscription');
-    const voucherItems = AppState.cart.filter(item => item.payment?.type === 'voucher');
-    
-    let allResults = { success: true, payment_type: 'mixed', total_amount: 0 };
-    
-    // 구독권 결제 처리
-    if (subscriptionItems.length > 0) {
-        const subId = subscriptionItems[0].payment.id;
-        const result = await apiRequest('/api/rental/subscription', {
-            method: 'POST',
-            body: JSON.stringify({
-                member_id: AppState.member.member_id,
-                subscription_id: subId,
-                items: subscriptionItems.map(item => ({
-                    product_id: item.product_id,
-                    quantity: item.quantity,
-                    device_uuid: item.device_uuid,
-                })),
-            }),
-        });
-        
-        if (!result.success) {
-            return result;
-        }
-        allResults.total_amount += result.total_amount || 0;
-    }
-    
-    // 금액권 결제 처리
-    if (voucherItems.length > 0) {
-        // 금액권별로 그룹화
-        const voucherGroups = {};
-        voucherItems.forEach(item => {
-            const vid = item.payment.id;
-            if (!voucherGroups[vid]) voucherGroups[vid] = [];
-            voucherGroups[vid].push(item);
-        });
-        
-        // 각 금액권에서 차감할 금액 계산
-        const selections = Object.entries(voucherGroups).map(([vid, items]) => ({
-            voucher_id: parseInt(vid),
-            amount: items.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-        }));
-        
-        const result = await apiRequest('/api/rental/voucher', {
-            method: 'POST',
-            body: JSON.stringify({
-                member_id: AppState.member.member_id,
-                items: voucherItems.map(item => ({
-                    product_id: item.product_id,
-                    quantity: item.quantity,
-                    device_uuid: item.device_uuid,
-                })),
-                voucher_selections: selections,
-            }),
-        });
-        
-        if (!result.success) {
-            return result;
-        }
-        allResults.total_amount += result.total_amount || 0;
-        allResults.voucher_details = result.voucher_details;
-    }
-    
-    return allResults;
 }
 
 // ========================================
@@ -928,11 +1334,6 @@ function renderMypageContent(data) {
     content.innerHTML = html;
 }
 
-function getCategoryName(category) {
-    const names = { 'top': '상의', 'pants': '하의', 'towel': '수건', 'sweat_towel': '땀수건', 'other': '기타' };
-    return names[category] || category;
-}
-
 function handleLogout() {
     sessionStorage.removeItem('member');
     window.location.href = '/';
@@ -967,56 +1368,109 @@ function renderCompleteResult(result) {
         dateEl.textContent = now.toLocaleString('ko-KR');
     }
     
-    // 상품 목록
+    // 상품 목록 (구독권/금액권 구분 없이 순수 상품 리스트)
     const itemsEl = document.getElementById('receiptItems');
     if (itemsEl) {
-        itemsEl.innerHTML = result.items.map(item => {
-            const paymentText = item.payment_type === 'subscription' ? '구독권' : 
-                               item.payment_type === 'voucher' ? '금액권' : '';
-            return `
-                <div class="receipt-item">
-                    <div class="receipt-item-left">
-                        <div class="receipt-item-name">${item.name}</div>
-                        <div class="receipt-item-detail">사이즈: ${item.size || '-'}</div>
-                        ${paymentText ? `<div class="receipt-item-payment">${paymentText} 결제</div>` : ''}
-                    </div>
-                    <div class="receipt-item-right">
-                        <div class="receipt-item-qty">${item.quantity}개</div>
-                        <div class="receipt-item-price">${formatPrice(item.price * item.quantity)}</div>
-                    </div>
+        // 상품별로 그룹화 (같은 상품 합치기)
+        const itemGroups = {};
+        result.items.forEach(item => {
+            const key = `${item.name}-${item.size}`;
+            if (!itemGroups[key]) {
+                itemGroups[key] = { ...item, quantity: 0 };
+            }
+            itemGroups[key].quantity += item.quantity;
+        });
+        
+        const totalQty = result.items.reduce((sum, item) => sum + item.quantity, 0);
+        
+        itemsEl.innerHTML = Object.values(itemGroups).map(item => `
+            <div class="receipt-item">
+                <div class="receipt-item-left">
+                    <div class="receipt-item-name">${item.name} ${item.size || ''}</div>
                 </div>
-            `;
-        }).join('');
+                <div class="receipt-item-right">
+                    <div class="receipt-item-qty">${item.quantity}개</div>
+                </div>
+            </div>
+        `).join('') + `
+            <div class="receipt-item" style="border-top: 2px solid #3a3a5a; margin-top: 10px; padding-top: 15px;">
+                <div class="receipt-item-left">
+                    <div class="receipt-item-name" style="color: #888;">합계</div>
+                </div>
+                <div class="receipt-item-right">
+                    <div class="receipt-item-qty">${totalQty}개</div>
+                </div>
+            </div>
+        `;
     }
     
-    // 결제 정보
+    // 결제 내역 (구독권 사용 + 금액권 결제 분리)
     const totalEl = document.getElementById('receiptTotal');
     if (totalEl) {
-        const paymentTypeText = result.payment_type === 'subscription' ? '구독권' : '금액권';
-        let detailHtml = '';
+        let html = '';
         
-        // 금액권 쪼개기 상세
-        if (result.voucher_details && result.voucher_details.length > 0) {
-            detailHtml = result.voucher_details.map(v => `
-                <div class="receipt-total-row">
-                    <span class="receipt-total-label">${v.name || '금액권'}</span>
-                    <span class="receipt-total-value">-${formatPrice(v.amount)}</span>
+        // 구독권 사용 내역
+        const subscriptionItems = result.items.filter(item => item.payment_type === 'subscription');
+        if (subscriptionItems.length > 0) {
+            // 카테고리별로 그룹화
+            const catCount = {};
+            subscriptionItems.forEach(item => {
+                const catName = getCategoryName(item.category);
+                catCount[catName] = (catCount[catName] || 0) + item.quantity;
+            });
+            
+            const usageText = Object.entries(catCount)
+                .map(([cat, count]) => `${cat} ${count}회`)
+                .join(', ');
+            
+            html += `
+                <div class="receipt-payment-section">
+                    <div class="receipt-payment-title">📋 구독권 사용</div>
+                    <div class="receipt-payment-detail">${usageText}</div>
                 </div>
-            `).join('');
+            `;
         }
         
-        totalEl.innerHTML = `
-            <div class="receipt-total-row">
-                <span class="receipt-total-label">결제 방식</span>
-                <span class="receipt-total-value">${paymentTypeText}</span>
-            </div>
-            ${detailHtml}
-            <div class="receipt-total-row">
+        // 금액권 결제 내역
+        if (result.voucher_details && result.voucher_details.length > 0) {
+            html += `
+                <div class="receipt-payment-section">
+                    <div class="receipt-payment-title">💳 금액권 결제</div>
+            `;
+            
+            result.voucher_details.forEach(v => {
+                html += `
+                    <div class="receipt-total-row">
+                        <span class="receipt-total-label">${v.product_name || '금액권'}</span>
+                        <span class="receipt-total-value">${formatPrice(v.amount)}</span>
+                    </div>
+                `;
+            });
+            
+            html += `</div>`;
+        }
+        
+        // 총 결제 금액 (금액권 합계만)
+        html += `
+            <div class="receipt-total-row" style="border-top: 2px solid #3a3a5a; margin-top: 15px; padding-top: 15px;">
                 <span class="receipt-total-label">총 결제 금액</span>
                 <span class="receipt-total-value highlight">${formatPrice(result.total_amount)}</span>
             </div>
         `;
+        
+        totalEl.innerHTML = html;
     }
+}
+
+function getCategoryName(category) {
+    const names = {
+        'top': '상의',
+        'pants': '하의',
+        'towel': '수건',
+        'sweat_towel': '땀수건',
+        'other': '기타'
+    };
+    return names[category] || category || '기타';
 }
 
 function startCountdown(seconds) {
@@ -1039,4 +1493,122 @@ function startCountdown(seconds) {
     updateCountdown();
 }
 
-console.log('운동복 대여 시스템 로드됨 (금액권/구독권 기반)');
+// ========================================
+// 숫자 키패드 (금액 입력용)
+// ========================================
+
+let currentNumpadInput = null;
+let numpadCurrentValue = '';
+
+function openNumpad(inputEl) {
+    if (!inputEl) {
+        console.error('openNumpad: inputEl이 없습니다');
+        return;
+    }
+    
+    currentNumpadInput = inputEl;
+    numpadCurrentValue = inputEl.value || '0';
+    
+    const overlay = document.getElementById('numpadOverlay');
+    const titleEl = document.getElementById('numpadTitle');
+    const valueEl = document.getElementById('numpadValue');
+    
+    if (titleEl) {
+        const voucherName = inputEl.dataset.voucherName || '금액권';
+        const maxAmount = parseInt(inputEl.dataset.max) || 0;
+        titleEl.textContent = `${voucherName} (최대 ${formatPrice(maxAmount)})`;
+    }
+    
+    if (valueEl) {
+        valueEl.textContent = formatPrice(parseInt(numpadCurrentValue) || 0);
+    }
+    
+    if (overlay) {
+        overlay.classList.add('show');
+    } else {
+        console.error('openNumpad: numpadOverlay를 찾을 수 없습니다');
+    }
+}
+
+// 이벤트 위임을 통한 금액 입력 필드 및 전액 버튼 클릭 처리
+document.addEventListener('click', function(e) {
+    // 금액 입력 필드 클릭 시 숫자 키패드 열기
+    if (e.target.classList.contains('voucher-amount-input')) {
+        e.preventDefault();
+        e.stopPropagation();
+        openNumpad(e.target);
+    }
+    
+    // "전액" 버튼 클릭 처리
+    if (e.target.classList.contains('voucher-use-all-btn')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const voucherId = parseInt(e.target.dataset.voucherId);
+        const maxAmount = parseInt(e.target.dataset.max);
+        if (voucherId && maxAmount) {
+            useAllVoucherBalance(voucherId, maxAmount);
+        }
+    }
+});
+
+function closeNumpad() {
+    document.getElementById('numpadOverlay')?.classList.remove('show');
+    currentNumpadInput = null;
+    numpadCurrentValue = '';
+}
+
+function closeNumpadOnOverlay(event) {
+    if (event.target.id === 'numpadOverlay') {
+        closeNumpad();
+    }
+}
+
+function numpadInput(digit) {
+    // 0으로 시작하면 대체
+    if (numpadCurrentValue === '0') {
+        numpadCurrentValue = digit;
+    } else {
+        numpadCurrentValue += digit;
+    }
+    
+    // 최대값 제한
+    if (currentNumpadInput) {
+        const max = parseInt(currentNumpadInput.dataset.max) || 999999;
+        if (parseInt(numpadCurrentValue) > max) {
+            numpadCurrentValue = max.toString();
+        }
+    }
+    
+    updateNumpadDisplay();
+}
+
+function numpadDelete() {
+    if (numpadCurrentValue.length > 1) {
+        numpadCurrentValue = numpadCurrentValue.slice(0, -1);
+    } else {
+        numpadCurrentValue = '0';
+    }
+    updateNumpadDisplay();
+}
+
+function numpadClear() {
+    numpadCurrentValue = '0';
+    updateNumpadDisplay();
+}
+
+function updateNumpadDisplay() {
+    const valueEl = document.getElementById('numpadValue');
+    if (valueEl) {
+        valueEl.textContent = formatPrice(parseInt(numpadCurrentValue) || 0);
+    }
+}
+
+function confirmNumpad() {
+    if (currentNumpadInput) {
+        currentNumpadInput.value = numpadCurrentValue;
+        updateVoucherTotal();
+    }
+    closeNumpad();
+}
+
+console.log('운동복 대여 시스템 로드됨 (개선된 결제수단 UI + 숫자 키패드)');

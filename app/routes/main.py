@@ -382,12 +382,17 @@ def api_rental_with_subscription():
         return jsonify({'success': False, 'message': '시스템 초기화 중입니다.'}), 503
     
     try:
+        print(f"[API] 구독권 대여 요청: member={member_id}, subscription_id={subscription_id}, items={items}")
         result = rental_service.process_rental_with_subscription(member_id, items, subscription_id)
+        print(f"[API] 구독권 대여 결과: {result}")
         return jsonify(result)
     except ValueError as e:
+        print(f"[API] 구독권 대여 ValueError: {e}")
         return jsonify({'success': False, 'message': str(e)}), 400
     except Exception as e:
+        import traceback
         print(f"[API] 구독권 대여 오류: {e}")
+        traceback.print_exc()
         return jsonify({'success': False, 'message': '대여 처리 중 오류가 발생했습니다.'}), 500
 
 
