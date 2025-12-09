@@ -44,3 +44,4 @@ chromium-browser \
 
 echo "✅ 키오스크 모드 실행 완료"
 
+

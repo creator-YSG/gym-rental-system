@@ -64,3 +64,4 @@ INSERT OR IGNORE INTO system_settings (key, value, description) VALUES
     ('max_rental_per_member', '1', '회원당 최대 대여 가능 수량'),
     ('allow_duplicate_rental', 'false', '중복 대여 허용 여부');
 
+

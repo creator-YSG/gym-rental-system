@@ -685,3 +685,4 @@ class RentalService:
             inventory['total']['total'] += 1
         
         return inventory
+

@@ -14,3 +14,4 @@ class BarcodeService:
             'barcode': barcode,
             'message': f'바코드 {barcode}가 인식되었습니다.'
         }
+

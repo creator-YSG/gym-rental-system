@@ -187,3 +187,4 @@ def get_event_logger():
     """EventLogger 인스턴스 반환"""
     return event_logger
 
+

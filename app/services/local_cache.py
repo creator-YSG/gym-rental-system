@@ -184,6 +184,40 @@ class LocalCache:
                 return member
         return None
     
+    def verify_payment_password(self, member_id: str, password: str) -> Tuple[bool, str]:
+        """
+        결제 비밀번호 검증
+        
+        Args:
+            member_id: 회원 ID
+            password: 입력된 비밀번호 (6자리 숫자)
+        
+        Returns:
+            (성공 여부, 메시지)
+        """
+        member = self.get_member(member_id)
+        
+        if not member:
+            return False, "회원 정보를 찾을 수 없습니다."
+        
+        stored_password = member.get('payment_password')
+        
+        if not stored_password:
+            return False, "결제 비밀번호가 설정되지 않았습니다. 관리자에게 문의하세요."
+        
+        # 문자열로 비교 (숫자가 문자열로 저장될 수 있음)
+        if str(password).strip() == str(stored_password).strip():
+            return True, "비밀번호 확인 완료"
+        else:
+            return False, "비밀번호가 일치하지 않습니다."
+    
+    def has_payment_password(self, member_id: str) -> bool:
+        """결제 비밀번호 설정 여부 확인"""
+        member = self.get_member(member_id)
+        if not member:
+            return False
+        return bool(member.get('payment_password'))
+    
     # =============================
     # 금액권 관련
     # =============================

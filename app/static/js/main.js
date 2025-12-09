@@ -665,7 +665,7 @@ async function handleCheckout() {
     openPaymentConfirmModal();
 }
 
-// 결제수단 1개일 때 자동 배정 후 대여
+// 결제수단 1개일 때 자동 배정 후 비밀번호 입력
 async function autoAssignSinglePaymentAndRent() {
     const { subscriptions, vouchers } = AppState.paymentMethods || {};
     
@@ -700,9 +700,16 @@ async function autoAssignSinglePaymentAndRent() {
         AppState.cart.forEach(item => {
             item.payment = { type: 'voucher', id: voucher.voucher_id, name: voucher.product_name };
         });
+        
+        // 금액권 선택 정보 저장
+        AppState.voucherSelections = [{
+            voucher_id: voucher.voucher_id,
+            amount: totalAmount
+        }];
     }
     
-    await processRental();
+    // 비밀번호 입력 모달 열기
+    openPasswordModal();
 }
 
 // ========================================
@@ -1041,7 +1048,9 @@ async function confirmPaymentAndRent() {
     AppState.voucherSelections = voucherSelections;
     
     closeBulkPaymentModal();
-    await processRentalWithSplit();
+    
+    // 비밀번호 입력 모달 열기
+    openPasswordModal();
 }
 
 // 기존 openBulkPaymentModal은 호환성 위해 유지
@@ -1194,6 +1203,7 @@ async function processRentalWithSplit() {
                     body: JSON.stringify({
                         member_id: AppState.member.member_id,
                         subscription_id: parseInt(subId),
+                        payment_password: AppState.paymentPassword,
                         items: items.map(item => ({
                             product_id: item.product_id,
                             quantity: item.quantity,
@@ -1239,6 +1249,7 @@ async function processRentalWithSplit() {
                 method: 'POST',
                 body: JSON.stringify({
                     member_id: AppState.member.member_id,
+                    payment_password: AppState.paymentPassword,
                     items: voucherItems.map(item => ({
                         product_id: item.product_id,
                         quantity: item.quantity,
@@ -1277,6 +1288,7 @@ async function processRentalWithSplit() {
     } finally {
         showLoading(false);
         AppState.voucherSelections = null;
+        AppState.paymentPassword = null;
     }
 }
 
@@ -1652,4 +1664,94 @@ function confirmNumpad() {
     closeNumpad();
 }
 
-console.log('운동복 대여 시스템 로드됨 (개선된 결제수단 UI + 숫자 키패드)');
+// ========================================
+// 결제 비밀번호 입력
+// ========================================
+
+let passwordValue = '';
+
+function openPasswordModal() {
+    passwordValue = '';
+    
+    const modal = document.getElementById('passwordModal');
+    if (modal) {
+        modal.classList.add('show');
+        updatePasswordDisplay();
+        clearPasswordError();
+    }
+}
+
+function closePasswordModal() {
+    document.getElementById('passwordModal')?.classList.remove('show');
+    passwordValue = '';
+    updatePasswordDisplay();
+    clearPasswordError();
+}
+
+function passwordInput(digit) {
+    if (passwordValue.length >= 6) return;
+    
+    passwordValue += digit;
+    updatePasswordDisplay();
+    clearPasswordError();
+}
+
+function passwordDelete() {
+    if (passwordValue.length > 0) {
+        passwordValue = passwordValue.slice(0, -1);
+        updatePasswordDisplay();
+        clearPasswordError();
+    }
+}
+
+function passwordClear() {
+    passwordValue = '';
+    updatePasswordDisplay();
+    clearPasswordError();
+}
+
+function updatePasswordDisplay() {
+    const dots = document.querySelectorAll('#passwordDots .dot');
+    const confirmBtn = document.getElementById('passwordConfirmBtn');
+    
+    dots.forEach((dot, index) => {
+        dot.classList.toggle('filled', index < passwordValue.length);
+    });
+    
+    if (confirmBtn) {
+        confirmBtn.disabled = passwordValue.length !== 6;
+    }
+}
+
+function clearPasswordError() {
+    const errorEl = document.getElementById('passwordError');
+    if (errorEl) {
+        errorEl.textContent = '';
+    }
+}
+
+function showPasswordError(message) {
+    const errorEl = document.getElementById('passwordError');
+    if (errorEl) {
+        errorEl.textContent = message;
+    }
+}
+
+async function confirmPassword() {
+    if (passwordValue.length !== 6) {
+        showPasswordError('6자리 비밀번호를 입력해주세요.');
+        return;
+    }
+    
+    // 비밀번호 저장 (API 호출 시 사용)
+    AppState.paymentPassword = passwordValue;
+    
+    // 모달 닫기
+    closePasswordModal();
+    
+    // 대여 처리 진행
+    await processRentalWithSplit();
+}
+
+console.log('운동복 대여 시스템 로드됨 (개선된 결제수단 UI + 숫자 키패드 + 비밀번호)');
+

@@ -127,3 +127,4 @@ class DatabaseManager:
         """컨텍스트 매니저 종료"""
         self.close()
 
+

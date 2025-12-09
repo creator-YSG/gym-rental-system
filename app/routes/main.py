@@ -351,6 +351,7 @@ def api_rental_with_subscription():
         {
             "member_id": "A001",
             "subscription_id": 1,
+            "payment_password": "123456",
             "items": [
                 {"product_id": "P-TOP-105", "quantity": 1, "device_uuid": "FBOX-..."},
                 ...
@@ -368,6 +369,7 @@ def api_rental_with_subscription():
     data = request.json
     member_id = data.get('member_id')
     subscription_id = data.get('subscription_id')
+    payment_password = data.get('payment_password')
     items = data.get('items', [])
     
     if not member_id:
@@ -376,6 +378,15 @@ def api_rental_with_subscription():
         return jsonify({'success': False, 'message': '구독권을 선택해주세요.'}), 400
     if not items:
         return jsonify({'success': False, 'message': '선택된 상품이 없습니다.'}), 400
+    if not payment_password:
+        return jsonify({'success': False, 'message': '결제 비밀번호를 입력해주세요.'}), 400
+    
+    # 결제 비밀번호 검증
+    local_cache = get_local_cache()
+    if local_cache:
+        is_valid, msg = local_cache.verify_payment_password(member_id, payment_password)
+        if not is_valid:
+            return jsonify({'success': False, 'message': msg}), 401
     
     rental_service = get_rental_service()
     if not rental_service:
@@ -404,6 +415,7 @@ def api_rental_with_voucher():
     Request:
         {
             "member_id": "A001",
+            "payment_password": "123456",
             "items": [
                 {"product_id": "P-TOP-105", "quantity": 1, "device_uuid": "FBOX-..."},
                 ...
@@ -425,6 +437,7 @@ def api_rental_with_voucher():
     """
     data = request.json
     member_id = data.get('member_id')
+    payment_password = data.get('payment_password')
     items = data.get('items', [])
     voucher_selections = data.get('voucher_selections', [])
     
@@ -434,6 +447,15 @@ def api_rental_with_voucher():
         return jsonify({'success': False, 'message': '선택된 상품이 없습니다.'}), 400
     if not voucher_selections:
         return jsonify({'success': False, 'message': '금액권을 선택해주세요.'}), 400
+    if not payment_password:
+        return jsonify({'success': False, 'message': '결제 비밀번호를 입력해주세요.'}), 400
+    
+    # 결제 비밀번호 검증
+    local_cache = get_local_cache()
+    if local_cache:
+        is_valid, msg = local_cache.verify_payment_password(member_id, payment_password)
+        if not is_valid:
+            return jsonify({'success': False, 'message': msg}), 401
     
     rental_service = get_rental_service()
     if not rental_service:

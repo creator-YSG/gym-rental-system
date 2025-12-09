@@ -132,14 +132,20 @@ class SheetsSync:
                     if phone and not phone.startswith('0'):
                         phone = '0' + phone
                 
+                # 결제 비밀번호 (6자리 숫자, 문자열로 저장)
+                payment_password = record.get('payment_password', '')
+                if payment_password:
+                    payment_password = str(payment_password).strip()
+                
                 cursor.execute('''
                     INSERT OR REPLACE INTO members 
-                    (member_id, name, phone, status, synced_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    (member_id, name, phone, payment_password, status, synced_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     record.get('member_id'),
                     record.get('name'),
                     phone,
+                    payment_password or None,
                     record.get('status', 'active'),
                     datetime.now().isoformat(),
                     datetime.now().isoformat()

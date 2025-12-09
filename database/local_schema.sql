@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS members (
     member_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     phone TEXT,                       -- 전화번호
+    payment_password TEXT,            -- 결제 비밀번호 (6자리 숫자)
     status TEXT DEFAULT 'active',     -- 'active', 'inactive', 'suspended'
     synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
