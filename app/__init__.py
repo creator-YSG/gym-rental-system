@@ -2,11 +2,15 @@
 운동복/수건 대여 시스템 - Flask 애플리케이션
 """
 import os
+import queue
 from flask import Flask, jsonify
 from flask_socketio import SocketIO
 
 # SocketIO 인스턴스 (전역)
 socketio = SocketIO()
+
+# NFC 이벤트 큐 (전역)
+nfc_queue = queue.Queue(maxsize=10)
 
 # 전역 서비스 인스턴스
 mqtt_service = None
@@ -14,11 +18,13 @@ local_cache = None
 sheets_sync = None
 sync_scheduler = None
 event_logger = None
+nfc_reader = None
+locker_api_client = None
 
 
 def create_app(config_name='default'):
     """Flask 애플리케이션 팩토리"""
-    global mqtt_service, local_cache, sheets_sync, sync_scheduler, event_logger
+    global mqtt_service, local_cache, sheets_sync, sync_scheduler, event_logger, nfc_reader, locker_api_client
     
     app = Flask(__name__)
     
@@ -41,6 +47,9 @@ def create_app(config_name='default'):
     
     # SocketIO 초기화 (threading 모드 - paho-mqtt와 호환)
     socketio.init_app(app, cors_allowed_origins="*", async_mode='threading')
+    
+    # NFC 큐를 app에 등록
+    app.nfc_queue = nfc_queue
     
     # LocalCache 초기화
     try:
@@ -145,6 +154,103 @@ def create_app(config_name='default'):
         import traceback
         traceback.print_exc()
     
+    # NFC 리더 및 락카키 대여기 API 클라이언트 초기화
+    try:
+        from app.services.nfc_reader import NFCReaderService
+        from app.services.locker_api_client import LockerAPIClient
+        
+        # 락카키 대여기 API 클라이언트
+        locker_api_url = os.getenv('LOCKER_API_URL', 'http://192.168.0.23:5000')
+        locker_api_client = LockerAPIClient(base_url=locker_api_url)
+        app.locker_api_client = locker_api_client
+        
+        # 헬스 체크
+        if locker_api_client.health_check():
+            print(f"[App] 락카키 대여기 API 연결 성공: {locker_api_url}")
+        else:
+            print(f"[App] 락카키 대여기 API 연결 실패: {locker_api_url}")
+        
+        # NFC 리더 초기화
+        nfc_port = os.getenv('NFC_PORT', '/dev/ttyUSB0')
+        nfc_reader = NFCReaderService(port=nfc_port)
+        app.nfc_reader = nfc_reader
+        
+        # NFC 태그 감지 시 처리 함수
+        def handle_nfc_tag(nfc_uid: str):
+            """NFC 태그 감지 시 실행 - 락카키 대여기 API 호출 후 큐에 저장"""
+            print(f"[App] NFC 태그 감지: {nfc_uid}")
+            
+            # 락카키 대여기 API 호출하여 member_id 가져오기
+            member = locker_api_client.get_member_by_nfc(nfc_uid)
+            
+            if member and member.get('member_id'):
+                member_id = member['member_id']
+                name = member.get('name', '')
+                locker_number = member.get('locker_number', '')
+                
+                print(f"[App] ✓ 회원 조회 성공: {name} ({member_id}), 락카: {locker_number}")
+                
+                # NFC 이벤트를 큐에 저장 (폴링 방식)
+                try:
+                    nfc_queue.put_nowait({
+                        'nfc_uid': nfc_uid,
+                        'member_id': member_id,
+                        'name': name,
+                        'locker_number': locker_number,
+                        'success': True
+                    })
+                    print(f"[App] NFC 이벤트 큐에 추가: {member_id}")
+                except queue.Full:
+                    # 큐가 꽉 찼으면 기존 데이터 제거 후 재시도
+                    try:
+                        nfc_queue.get_nowait()
+                        nfc_queue.put_nowait({
+                            'nfc_uid': nfc_uid,
+                            'member_id': member_id,
+                            'name': name,
+                            'locker_number': locker_number,
+                            'success': True
+                        })
+                        print(f"[App] NFC 이벤트 큐에 추가 (기존 데이터 덮어씀): {member_id}")
+                    except:
+                        print(f"[App] ✗ NFC 이벤트 큐 추가 실패")
+            else:
+                # 오류 이벤트를 큐에 저장
+                try:
+                    nfc_queue.put_nowait({
+                        'nfc_uid': nfc_uid,
+                        'success': False,
+                        'message': '락카가 배정되어 있지 않습니다'
+                    })
+                    print(f"[App] NFC 오류 이벤트 큐에 추가: {nfc_uid}")
+                except queue.Full:
+                    try:
+                        nfc_queue.get_nowait()
+                        nfc_queue.put_nowait({
+                            'nfc_uid': nfc_uid,
+                            'success': False,
+                            'message': '락카가 배정되어 있지 않습니다'
+                        })
+                    except:
+                        print(f"[App] ✗ NFC 오류 이벤트 큐 추가 실패")
+                print(f"[App] ✗ 회원 정보 없음: NFC {nfc_uid}")
+        
+        # 콜백 등록
+        nfc_reader.set_callback(handle_nfc_tag)
+        
+        # NFC 리더 시작
+        nfc_reader.start()
+        
+        print("[App] NFC 리더 서비스 시작")
+        
+    except ImportError as e:
+        print(f"[App] NFC 리더 모듈 임포트 실패: {e}")
+        print("[App] pyserial 설치 필요: pip install pyserial")
+    except Exception as e:
+        print(f"[App] NFC 리더 초기화 실패: {e}")
+        import traceback
+        traceback.print_exc()
+    
     # 블루프린트 등록
     from app.routes import main_bp, api_locker_bp, api_device_bp
     app.register_blueprint(main_bp)
@@ -186,5 +292,15 @@ def get_sync_scheduler():
 def get_event_logger():
     """EventLogger 인스턴스 반환"""
     return event_logger
+
+
+def get_nfc_reader():
+    """NFC 리더 인스턴스 반환"""
+    return nfc_reader
+
+
+def get_locker_api_client():
+    """락카키 대여기 API 클라이언트 반환"""
+    return locker_api_client
 
 

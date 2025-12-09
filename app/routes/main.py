@@ -80,6 +80,73 @@ def complete():
 # 인증 API
 # ========================================
 
+def _get_member_login_data(member_id):
+    """
+    회원 로그인 시 필요한 정보 조회 (공통 함수)
+    
+    Args:
+        member_id: 회원 ID
+    
+    Returns:
+        dict: 회원 정보 또는 None
+    """
+    local_cache = get_local_cache()
+    
+    if not local_cache:
+        return None
+    
+    member = local_cache.get_member(member_id)
+    
+    if not member:
+        return None
+    
+    if member.get('status') != 'active':
+        return None
+    
+    # 금액권/구독권 요약 정보
+    total_balance = local_cache.get_total_balance(member_id)
+    active_vouchers = local_cache.get_active_vouchers(member_id)
+    active_subscriptions = local_cache.get_active_subscriptions(member_id)
+    
+    # 구독권 상세 정보 (카테고리별 잔여 횟수, D-day)
+    subscription_info = None
+    if active_subscriptions:
+        sub = active_subscriptions[0]  # 첫 번째 활성 구독권
+        remaining_by_cat = {}
+        for cat in ['top', 'pants', 'towel']:
+            remaining_by_cat[cat] = local_cache.get_subscription_remaining(sub['subscription_id'], cat)
+        
+        # D-day 계산
+        valid_until = sub.get('valid_until', '')
+        days_left = 0
+        if valid_until:
+            try:
+                end_date = datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
+                now = datetime.now(end_date.tzinfo) if end_date.tzinfo else datetime.now()
+                days_left = (end_date - now).days
+            except:
+                pass
+        
+        subscription_info = {
+            'subscription_id': sub['subscription_id'],
+            'product_name': sub.get('product_name', sub.get('subscription_product_id', '')),
+            'remaining_by_category': remaining_by_cat,
+            'days_left': days_left,
+            'valid_until': valid_until,
+        }
+    
+    return {
+        'member_id': member_id,
+        'name': member['name'],
+        'phone': member.get('phone', ''),
+        'status': member['status'],
+        'total_balance': total_balance,
+        'active_vouchers_count': len(active_vouchers),
+        'active_subscriptions_count': len(active_subscriptions),
+        'subscription_info': subscription_info,
+    }
+
+
 @main_bp.route('/api/auth/phone', methods=['POST'])
 def api_auth_phone():
     """
@@ -125,52 +192,53 @@ def api_auth_phone():
         return jsonify({'success': False, 'message': '비활성화된 회원입니다.'}), 403
     
     member_id = member['member_id']
+    member_data = _get_member_login_data(member_id)
     
-    # 금액권/구독권 요약 정보
-    total_balance = local_cache.get_total_balance(member_id)
-    active_vouchers = local_cache.get_active_vouchers(member_id)
-    active_subscriptions = local_cache.get_active_subscriptions(member_id)
-    
-    # 구독권 상세 정보 (카테고리별 잔여 횟수, D-day)
-    subscription_info = None
-    if active_subscriptions:
-        sub = active_subscriptions[0]  # 첫 번째 활성 구독권
-        remaining_by_cat = {}
-        for cat in ['top', 'pants', 'towel']:
-            remaining_by_cat[cat] = local_cache.get_subscription_remaining(sub['subscription_id'], cat)
-        
-        # D-day 계산
-        from datetime import datetime
-        valid_until = sub.get('valid_until', '')
-        days_left = 0
-        if valid_until:
-            try:
-                end_date = datetime.fromisoformat(valid_until.replace('Z', '+00:00'))
-                now = datetime.now(end_date.tzinfo) if end_date.tzinfo else datetime.now()
-                days_left = (end_date - now).days
-            except:
-                pass
-        
-        subscription_info = {
-            'subscription_id': sub['subscription_id'],
-            'product_name': sub.get('product_name', sub.get('subscription_product_id', '')),
-            'remaining_by_category': remaining_by_cat,
-            'days_left': days_left,
-            'valid_until': valid_until,
-        }
+    if not member_data:
+        return jsonify({'success': False, 'message': '회원 정보 조회 실패'}), 500
     
     return jsonify({
         'success': True,
-        'member': {
-            'member_id': member_id,
-            'name': member['name'],
-            'phone': member.get('phone', ''),
-            'status': member['status'],
-            'total_balance': total_balance,
-            'active_vouchers_count': len(active_vouchers),
-            'active_subscriptions_count': len(active_subscriptions),
-            'subscription_info': subscription_info,
+        'member': member_data
+    })
+
+
+@main_bp.route('/api/auth/member_id', methods=['POST'])
+def api_auth_member_id():
+    """
+    member_id로 회원 로그인 (NFC 로그인용)
+    
+    Request:
+        {"member_id": "A001"}
+    
+    Response:
+        {
+            "success": true,
+            "member": {
+                "member_id": "A001",
+                "name": "홍길동",
+                "phone": "01012345678",
+                "status": "active",
+                "total_balance": 50000,
+                "active_vouchers_count": 2,
+                "active_subscriptions_count": 1
+            }
         }
+    """
+    data = request.json
+    member_id = data.get('member_id', '').strip()
+    
+    if not member_id:
+        return jsonify({'success': False, 'message': '회원 ID가 없습니다.'}), 400
+    
+    member_data = _get_member_login_data(member_id)
+    
+    if not member_data:
+        return jsonify({'success': False, 'message': '회원 정보를 찾을 수 없거나 비활성화된 회원입니다.'}), 404
+    
+    return jsonify({
+        'success': True,
+        'member': member_data
     })
 
 
@@ -488,3 +556,142 @@ def api_get_inventory():
         return jsonify({'categories': {}, 'total': {'total': 0, 'available': 0}})
     inventory = rental_service.get_inventory_status()
     return jsonify(inventory)
+
+
+@main_bp.route('/api/nfc/poll', methods=['GET'])
+def api_nfc_poll():
+    """NFC 이벤트 폴링 (큐에서 가져오기)
+    
+    Response:
+        성공: {"has_event": true, "member_id": "...", "name": "...", ...}
+        없음: {"has_event": false}
+    """
+    from flask import current_app
+    import queue
+    
+    try:
+        nfc_queue = getattr(current_app, 'nfc_queue', None)
+        
+        if nfc_queue:
+            try:
+                # 큐에서 데이터 가져오기 (non-blocking)
+                nfc_data = nfc_queue.get_nowait()
+                
+                if nfc_data.get('success'):
+                    return jsonify({
+                        'has_event': True,
+                        'success': True,
+                        'member_id': nfc_data.get('member_id'),
+                        'name': nfc_data.get('name'),
+                        'locker_number': nfc_data.get('locker_number'),
+                        'nfc_uid': nfc_data.get('nfc_uid')
+                    })
+                else:
+                    return jsonify({
+                        'has_event': True,
+                        'success': False,
+                        'message': nfc_data.get('message', '알 수 없는 오류'),
+                        'nfc_uid': nfc_data.get('nfc_uid')
+                    })
+            except queue.Empty:
+                # 큐가 비어있음
+                return jsonify({'has_event': False})
+        else:
+            return jsonify({'has_event': False})
+            
+    except Exception as e:
+        print(f'[API] NFC 폴링 오류: {e}')
+        return jsonify({'has_event': False, 'error': str(e)})
+
+
+@main_bp.route('/api/test/nfc-inject', methods=['POST'])
+def api_test_nfc_inject():
+    """테스트용: NFC 이벤트 큐에 직접 주입
+    
+    Request:
+        {"nfc_uid": "5A41B914524189"}
+    
+    Response:
+        {"success": true, "member": {...}}
+    """
+    from flask import current_app
+    import queue
+    
+    data = request.json
+    nfc_uid = data.get('nfc_uid', '').strip()
+    
+    if not nfc_uid:
+        return jsonify({'success': False, 'message': 'NFC UID가 필요합니다.'}), 400
+    
+    # Locker API Client를 통해 회원 정보 조회
+    if not hasattr(current_app, 'locker_api_client') or not current_app.locker_api_client:
+        return jsonify({'success': False, 'message': 'Locker API 클라이언트가 없습니다.'}), 500
+    
+    member_info = current_app.locker_api_client.get_member_by_nfc(nfc_uid)
+    
+    nfc_queue = getattr(current_app, 'nfc_queue', None)
+    
+    if not nfc_queue:
+        return jsonify({'success': False, 'message': 'NFC 큐가 초기화되지 않았습니다.'}), 500
+    
+    if not member_info:
+        # 오류 이벤트 큐에 추가
+        try:
+            nfc_queue.put_nowait({
+                'nfc_uid': nfc_uid,
+                'success': False,
+                'message': '등록되지 않은 NFC 카드입니다.'
+            })
+            print(f"[API] 🧪 테스트: NFC 오류 이벤트 큐에 주입 - {nfc_uid}")
+            return jsonify({
+                'success': False,
+                'message': '등록되지 않은 NFC 카드입니다 (큐에 저장됨)'
+            }), 404
+        except queue.Full:
+            try:
+                nfc_queue.get_nowait()
+                nfc_queue.put_nowait({
+                    'nfc_uid': nfc_uid,
+                    'success': False,
+                    'message': '등록되지 않은 NFC 카드입니다.'
+                })
+                return jsonify({
+                    'success': False,
+                    'message': '등록되지 않은 NFC 카드입니다 (큐에 저장됨, 기존 데이터 덮어씀)'
+                }), 404
+            except:
+                return jsonify({'success': False, 'message': 'NFC 큐 추가 실패'}), 500
+    
+    # 성공 이벤트 큐에 추가
+    try:
+        nfc_queue.put_nowait({
+            'nfc_uid': nfc_uid,
+            'member_id': member_info['member_id'],
+            'name': member_info['name'],
+            'locker_number': member_info['locker_number'],
+            'success': True
+        })
+        print(f"[API] 🧪 테스트: NFC 이벤트 큐에 주입 - {member_info['member_id']} ({member_info['name']})")
+        return jsonify({
+            'success': True,
+            'message': 'NFC 이벤트가 큐에 추가되었습니다',
+            'member': member_info
+        })
+    except queue.Full:
+        try:
+            nfc_queue.get_nowait()
+            nfc_queue.put_nowait({
+                'nfc_uid': nfc_uid,
+                'member_id': member_info['member_id'],
+                'name': member_info['name'],
+                'locker_number': member_info['locker_number'],
+                'success': True
+            })
+            print(f"[API] 🧪 테스트: NFC 이벤트 큐에 주입 (기존 데이터 덮어씀) - {member_info['member_id']}")
+            return jsonify({
+                'success': True,
+                'message': 'NFC 이벤트가 큐에 추가되었습니다 (기존 데이터 덮어씀)',
+                'member': member_info
+            })
+        except:
+            return jsonify({'success': False, 'message': 'NFC 큐 추가 실패'}), 500

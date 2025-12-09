@@ -82,6 +82,58 @@ function initLoginPage() {
     const loginBtn = document.getElementById('loginBtn');
     if (loginBtn) loginBtn.addEventListener('click', handleLogin);
     
+    // NFC 이벤트 폴링 (홈 화면에서만)
+    let nfcPollingInterval = setInterval(async () => {
+        try {
+            const response = await fetch('/api/nfc/poll');
+            const data = await response.json();
+            
+            if (data.has_event && data.success) {
+                console.log('[NFC] 태그 감지:', data);
+                clearInterval(nfcPollingInterval); // 폴링 중지
+                showLoading(true);
+                
+                try {
+                    // member_id로 로그인 API 호출
+                    const loginResponse = await apiRequest('/api/auth/member_id', {
+                        method: 'POST',
+                        body: JSON.stringify({ member_id: data.member_id }),
+                    });
+                    
+                    if (loginResponse.success) {
+                        console.log('[NFC] 로그인 성공:', loginResponse.member);
+                        sessionStorage.setItem('member', JSON.stringify(loginResponse.member));
+                        window.location.href = '/rental';
+                    } else {
+                        showError(loginResponse.message || 'NFC 로그인에 실패했습니다.');
+                        // 폴링 재시작
+                        nfcPollingInterval = setInterval(arguments.callee, 500);
+                    }
+                } catch (error) {
+                    console.error('[NFC] 로그인 오류:', error);
+                    showError(error.message || 'NFC 로그인 중 오류가 발생했습니다.');
+                    // 폴링 재시작
+                    nfcPollingInterval = setInterval(arguments.callee, 500);
+                } finally {
+                    showLoading(false);
+                }
+            } else if (data.has_event && !data.success) {
+                console.log('[NFC] 오류:', data);
+                showError(data.message || '락카가 배정되어 있지 않습니다.');
+            }
+        } catch (error) {
+            // 폴링 오류는 조용히 무시 (서버 다운 등)
+            console.error('[NFC] 폴링 오류:', error);
+        }
+    }, 500); // 500ms마다 폴링
+    
+    console.log('[NFC] 폴링 시작 (500ms 간격)');
+    
+    // 페이지 떠날 때 폴링 중지
+    window.addEventListener('beforeunload', () => {
+        clearInterval(nfcPollingInterval);
+    });
+    
     console.log('로그인 페이지 초기화 완료');
 }
 
