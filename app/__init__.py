@@ -158,9 +158,26 @@ def create_app(config_name='default'):
     try:
         from app.services.nfc_reader import NFCReaderService
         from app.services.locker_api_client import LockerAPIClient
+        from app.services.integration_sync import IntegrationSync
+        
+        # 락카키 대여기 API 주소 가져오기 (IntegrationSync 사용)
+        try:
+            print("[App] 락카키 대여기 IP 다운로드 시도 (System_Integration 시트)...")
+            integration_sync = IntegrationSync()
+            locker_api_info = integration_sync.download_locker_api_info()
+            locker_api_url = locker_api_info['url']
+            print(f"[App] ✓ 락카키 대여기 IP 다운로드 성공: {locker_api_url}")
+            print(f"     - 마지막 업데이트: {locker_api_info.get('last_updated', 'N/A')}")
+            print(f"     - 상태: {locker_api_info.get('status', 'unknown')}")
+        except Exception as e:
+            # 실패 시 환경변수 또는 기본값 사용
+            locker_api_url = os.getenv('LOCKER_API_URL', 'http://192.168.0.23:5000')
+            print(f"[App] ⚠️ 락카키 대여기 IP 다운로드 실패: {e}")
+            print(f"[App] 기본값 사용: {locker_api_url}")
+            import traceback
+            traceback.print_exc()
         
         # 락카키 대여기 API 클라이언트
-        locker_api_url = os.getenv('LOCKER_API_URL', 'http://192.168.0.23:5000')
         locker_api_client = LockerAPIClient(base_url=locker_api_url)
         app.locker_api_client = locker_api_client
         

@@ -1175,7 +1175,27 @@ def get_locker_api_client():
 
 ### ✅ 완료된 작업
 
-#### 1. NFC 로그인 기능 구현 (큐 + 폴링 방식)
+#### 1. Google Sheets 통합 - 락카키 대여기 IP 동적 관리
+- **상태**: ✅ 구현 완료 및 라즈베리파이 테스트 성공
+- **시트**: System_Integration (ID: `15qpiY1r_SEK6b2dr00UDmKrYHSVuGMmiMeTZ898Lv8Q`)
+- **구현 내용**:
+  - `app/services/integration_sync.py`: IntegrationSync 클래스 (락카키 대여기 코드에서 복사)
+  - `app/__init__.py`: 부팅 시 System_Integration 시트에서 락카키 대여기 IP 자동 다운로드
+  - 로컬 캐시 (`config/locker_api_cache.json`): 오프라인 백업
+  - 실패 시 기본값 사용 (`http://192.168.0.23:5000`)
+- **테스트 결과**:
+  ```
+  ✓ Google Sheets 연결: System_Integration
+  ✓ 락카키 대여기 IP 다운로드: 192.168.0.23:5000
+  ✓ 로컬 캐시 저장 완료
+  ✓ 헬스 체크 성공
+  ```
+- **장점**:
+  - 헬스장별 독립된 구글 드라이브 폴더 관리
+  - 락카키 대여기 IP 변경 시 자동 반영
+  - 기존 F-BOX-DB-TEST 시트와 독립적으로 동작
+
+#### 2. NFC 로그인 기능 구현 (큐 + 폴링 방식)
 - **상태**: ✅ 구현 완료 및 라즈베리파이 테스트 성공
 - **방식**: SocketIO → 큐(Queue) + HTTP 폴링으로 변경 (라즈베리파이 환경 최적화)
 - **구현 내용**:
