@@ -107,13 +107,13 @@ function initLoginPage() {
                     } else {
                         showError(loginResponse.message || 'NFC 로그인에 실패했습니다.');
                         // 폴링 재시작
-                        nfcPollingInterval = setInterval(arguments.callee, 500);
+                        nfcPollingInterval = setInterval(arguments.callee, 1000);
                     }
                 } catch (error) {
                     console.error('[NFC] 로그인 오류:', error);
                     showError(error.message || 'NFC 로그인 중 오류가 발생했습니다.');
                     // 폴링 재시작
-                    nfcPollingInterval = setInterval(arguments.callee, 500);
+                    nfcPollingInterval = setInterval(arguments.callee, 1000);
                 } finally {
                     showLoading(false);
                 }
@@ -123,11 +123,11 @@ function initLoginPage() {
             }
         } catch (error) {
             // 폴링 오류는 조용히 무시 (서버 다운 등)
-            console.error('[NFC] 폴링 오류:', error);
+            // console.error('[NFC] 폴링 오류:', error); // 로그 줄임
         }
-    }, 500); // 500ms마다 폴링
+    }, 1000); // 1초마다 폴링 (최적화)
     
-    console.log('[NFC] 폴링 시작 (500ms 간격)');
+    console.log('[NFC] 폴링 시작 (1초 간격)');
     
     // 페이지 떠날 때 폴링 중지
     window.addEventListener('beforeunload', () => {
